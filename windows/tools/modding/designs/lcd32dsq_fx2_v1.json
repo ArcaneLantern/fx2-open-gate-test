@@ -1,0 +1,327 @@
+{
+ "design": "lcd32dsq_fx2_v1",
+ "build": "fx2_101",
+ "camera": "ILME-FX2 (FX2), firmware 1.01",
+ "title": "FX2 1.01: rear screen (3:2 panel) shows the open-gate live view at 3:2 with the focus frames (the A7 IV's lcdfill_v2: fit word and the frame widgets' 16:9 entries), and the built-in De-Squeeze Display ratios set for a 3:2 picture (1.3x 1.95:1, 2.0x the whole frame at 3:1 with the centre 4:3 crop off; 1.65x 2.467:1, 1.8x 2.7:1)",
+ "kind": "ram_words",
+ "artifact": "cpapp-b.bin 1.01 (ILME-FX2), its loaded image in coprocessor RAM: the words are in the file, the change is made in RAM only",
+ "artifact_sha256": "eba723db657117a36d9593dacf640840aca893c0d6ee5d728de9d1996b8c5e29",
+ "generated_by": "build/build_lcd_fx2.py",
+ "ported_from": "lcdfill_v2 (A7 IV 6.02; works on that camera, F966/F969: the same seven words at the FX2's addresses, its fit function and frame tables byte-identical) + the FX3 kit's de-squeeze part (lcd32dsq_fx3_v1), redone on the FX2's own calculator, crop and device-rectangle code",
+ "summary": {
+  "sites": 18,
+  "bytes": 72,
+  "guards": 33,
+  "panel": "rear LCD, 3:2 (720 x 480, panel code 1 from type byte 3)",
+  "picture": "16:9 live view (aspect code 2) holding the whole 3:2 sensor area",
+  "fit_stock": "letterbox (3)",
+  "fit_new": "fill (0)",
+  "frame_rectangle_stock": [
+   0,
+   38,
+   640,
+   404
+  ],
+  "frame_rectangle_new": [
+   0,
+   0,
+   640,
+   480
+  ],
+  "desqueeze": {
+   "code 1 (1.3x, menu)": "45/104 -> 20/39",
+   "code 5 (2.0x, menu)": "3/8 -> 1/3, centre crop off",
+   "code 3 (1.65x, not in the 1.01 menu)": "15/44 -> 15/37",
+   "code 4 (1.8x, not in the menu)": "5/12 -> 10/27, centre crop off",
+   "code 2 (1.5x, not in the menu)": "its 16:9 case uses code 5's words: 3:1 while applied"
+  },
+  "goes_with": [
+   "the FX2 open-gate state (A7 IV form: ogsq/outsz/ogfile steps of fx2_101)"
+  ]
+ },
+ "while_applied": "every 16:9 picture on the rear screen fills the 3:2 panel and the de-squeeze ratios are those of a 3:2 picture (other movie formats look wrong there). Codes 4 and 5's ratios are the calculator's only ratio for every picture shape and their crop is off for every shape. The EVF (4:3) shows the squeezed 16:9 picture with de-squeeze off, as on the A7 IV; with de-squeeze on it uses the same new ratios. HDMI's own layout path (0x1fa728) and the device command's factor bytes (0x1fad38) are unchanged",
+ "not_checked": [
+  "on a camera: nothing of this design has run on an FX2",
+  "the FX2's rear panel type byte 0x19d98cc (expected 3 = 3:2 from Sony's 1,036,800 dots; a dump should read it)",
+  "that the frame widgets use row 1 on the FX2's rear panel (as on the A7 IV; the row comes from the widget object at run time)",
+  "what the output-device rectangle of 0x7214b6 is used for (inferred: the picture's place on the output for codes 4/5)",
+  "whether the focus frames are drawn while de-squeeze is on (stock behaves the same either way)"
+ ],
+ "sites": [
+  {
+   "ram_address": "0x1f9eec",
+   "old": "03000000",
+   "new": "00000000",
+   "note": "VDF fit mode of a 16:9 picture (picture code 2) on a 3:2 panel (panel code 1): 3 letterbox -> 0 fill. The rear screen then shows the squeezed 16:9 live view over the whole 3:2 panel, i.e. stretched x32/27 vertically: the 3:2 sensor area at its true shape [A7 IV 0x1e4bcc, lcdfill_v2]"
+  },
+  {
+   "ram_address": "0x1fa0e8",
+   "old": "0c094ff0",
+   "new": "1b094ff0",
+   "note": "de-squeeze code 4 (1.8x), its only ratio: d 12 -> 27"
+  },
+  {
+   "ram_address": "0x1fa0ec",
+   "old": "050adfe8",
+   "new": "0a0adfe8",
+   "note": "de-squeeze code 4 (1.8x): n 5 -> 10 (10/27: 2.7:1)"
+  },
+  {
+   "ram_address": "0x1fa120",
+   "old": "4ff00809",
+   "new": "4ff00309",
+   "note": "de-squeeze code 5 (2.0x; also code 2's 16:9 case): d 8 -> 3"
+  },
+  {
+   "ram_address": "0x1fa124",
+   "old": "4ff0030a",
+   "new": "4ff0010a",
+   "note": "de-squeeze code 5 (2.0x): n 3 -> 1 (1/3: 3:1, the whole 3:2 frame)"
+  },
+  {
+   "ram_address": "0x1fa154",
+   "old": "2c0901e0",
+   "new": "250901e0",
+   "note": "de-squeeze code 3 (1.65x), 16:9 picture: d 44 -> 37 (n 15 shared: 15/37, 2.467:1)"
+  },
+  {
+   "ram_address": "0x1fa164",
+   "old": "68094ff0",
+   "new": "27094ff0",
+   "note": "de-squeeze code 1 (1.3x), 16:9 picture: d 104 -> 39"
+  },
+  {
+   "ram_address": "0x1fa168",
+   "old": "2d0a03e0",
+   "new": "140a03e0",
+   "note": "de-squeeze code 1 (1.3x), 16:9 picture: n 45 -> 20 (height = width x 20/39: 1.95:1)"
+  },
+  {
+   "ram_address": "0x721554",
+   "old": "00780428",
+   "new": "00780628",
+   "note": "output-device rectangle 0x7214b6: code 4 -> 6 (never): the rectangle of codes 1-3"
+  },
+  {
+   "ram_address": "0x721568",
+   "old": "052840f0",
+   "new": "062840f0",
+   "note": "output-device rectangle 0x7214b6: code 5 -> 6 (never): the rectangle of codes 1-3"
+  },
+  {
+   "ram_address": "0x721e70",
+   "old": "1bd10528",
+   "new": "1bd10628",
+   "note": "input crop 0x721e3c, path with the flag set: code 5 -> 6 (never): no centre 4:3 crop"
+  },
+  {
+   "ram_address": "0x721eac",
+   "old": "fe000428",
+   "new": "fe000628",
+   "note": "input crop 0x721e3c, other path (code & 0xfe): 4 -> 6 (never): no centre 4:3 crop for codes 4, 5"
+  },
+  {
+   "ram_address": "0xf79714",
+   "old": "00002600",
+   "new": "00000000",
+   "note": "cpActAfWindow (focus area frames), check 0x128438: expected live-view rectangle for a 16:9 picture on the rear 3:2 panel (row 1), x, y: stock letterbox (0, 38, 640, 404) -> the whole panel (0, 0, 640, 480) [A7 IV 0xd7b5a0, lcdfill_v2]"
+  },
+  {
+   "ram_address": "0xf79718",
+   "old": "80029401",
+   "new": "8002e001",
+   "note": "cpActAfWindow (focus area frames), check 0x128438: expected live-view rectangle for a 16:9 picture on the rear 3:2 panel (row 1), w, h: stock letterbox (0, 38, 640, 404) -> the whole panel (0, 0, 640, 480) [A7 IV 0xd7b5a4, lcdfill_v2]"
+  },
+  {
+   "ram_address": "0xf7978c",
+   "old": "00002600",
+   "new": "00000000",
+   "note": "cpActAfWindowRemoteSend (the same frames for a remote viewer), check 0x128d60: expected live-view rectangle for a 16:9 picture on the rear 3:2 panel (row 1), x, y: stock letterbox (0, 38, 640, 404) -> the whole panel (0, 0, 640, 480) [A7 IV 0xd7b618, lcdfill_v2]"
+  },
+  {
+   "ram_address": "0xf79790",
+   "old": "80029401",
+   "new": "8002e001",
+   "note": "cpActAfWindowRemoteSend (the same frames for a remote viewer), check 0x128d60: expected live-view rectangle for a 16:9 picture on the rear 3:2 panel (row 1), w, h: stock letterbox (0, 38, 640, 404) -> the whole panel (0, 0, 640, 480) [A7 IV 0xd7b61c, lcdfill_v2]"
+  },
+  {
+   "ram_address": "0xf79804",
+   "old": "00002600",
+   "new": "00000000",
+   "note": "cpActTrackingFrame (tracking and face frames), check 0x1297e8: expected live-view rectangle for a 16:9 picture on the rear 3:2 panel (row 1), x, y: stock letterbox (0, 38, 640, 404) -> the whole panel (0, 0, 640, 480) [A7 IV 0xd7b690, lcdfill_v2]"
+  },
+  {
+   "ram_address": "0xf79808",
+   "old": "80029401",
+   "new": "8002e001",
+   "note": "cpActTrackingFrame (tracking and face frames), check 0x1297e8: expected live-view rectangle for a 16:9 picture on the rear 3:2 panel (row 1), w, h: stock letterbox (0, 38, 640, 404) -> the whole panel (0, 0, 640, 480) [A7 IV 0xd7b694, lcdfill_v2]"
+  }
+ ],
+ "guards": [
+  {
+   "ram_address": "0x1f9e98",
+   "bytes": "02468a4201d1002070470020052918d8",
+   "note": "first 16 bytes of the fit-mode function 0x1f9e98 [A7 IV 0x1e4b78], as in the file"
+  },
+  {
+   "ram_address": "0x1f9ed8",
+   "bytes": "022070470020032a38bf0320704700bf",
+   "note": "last 16 bytes of the fit-mode function before its tables [A7 IV 0x1e4bb8], as in the file"
+  },
+  {
+   "ram_address": "0x1f9ee8",
+   "bytes": "03000000",
+   "note": "picture code 2 (16:9), panel code 0 (4:3: the EVF): 3 letterbox, left alone [A7 IV 0x1e4bc8], as in the file"
+  },
+  {
+   "ram_address": "0x1f9ef0",
+   "bytes": "00000000000000000000000002000000",
+   "note": "picture code 2, panel codes 2 to 5: 0, 0, 0, 2 [A7 IV 0x1e4bd0], as in the file"
+  },
+  {
+   "ram_address": "0x1f9f00",
+   "bytes": "03000000000000000200000000000000",
+   "note": "the table for picture code 1 (3:2), panel codes 0 to 3: 3, 0, 2, 0 [A7 IV 0x1e4be0], as in the file"
+  },
+  {
+   "ram_address": "0x1fa0c0",
+   "bytes": "f0b503af2de9000f83b07d690c461e46",
+   "note": "first 16 bytes of the de-squeeze calculator 0x1fa0c0, as in the file"
+  },
+  {
+   "ram_address": "0x1fa0d0",
+   "bytes": "2868d0f89817284688470078d7f81080",
+   "note": "the calculator's read of the code (accessor slot 0x798), as in the file"
+  },
+  {
+   "ram_address": "0x1fa0e0",
+   "bytes": "013804282ad84ff0",
+   "note": "the code's range check (code - 1 > 4: whole output) before code 4's ratio, as in the file"
+  },
+  {
+   "ram_address": "0x1fa0f0",
+   "bytes": "00f0030d1c41170076b3022e31d0052e",
+   "note": "the code table (tbb) and code 1's shape tests, as in the file"
+  },
+  {
+   "ram_address": "0x1fa100",
+   "bytes": "1cd14ff4d06940f2a32a33e076b3022e",
+   "note": "code 1's 17:9 ratio and code 2's shape tests, as in the file"
+  },
+  {
+   "ram_address": "0x1fa110",
+   "bytes": "06d0052e12d14ff080094ff02d0a29e0",
+   "note": "code 2's 16:9 branch to code 5's ratio, and its 17:9 ratio, as in the file"
+  },
+  {
+   "ram_address": "0x1fa128",
+   "bytes": "24e0022e11d0052e04d14ff430794ff0",
+   "note": "code 3's shape tests and 17:9 ratio, as in the file"
+  },
+  {
+   "ram_address": "0x1fa13c",
+   "bytes": "0020a8f80000a8f80200200ca8f80440",
+   "note": "the whole-output path for codes with no ratio, as in the file"
+  },
+  {
+   "ram_address": "0x1fa150",
+   "bytes": "b9e04ff0",
+   "note": "the branch before code 3's 16:9 ratio, as in the file"
+  },
+  {
+   "ram_address": "0x1fa158",
+   "bytes": "4ff01a094ff00f0a08e04ff0",
+   "note": "code 1's 4:3 ratio (26, 15: the 15 code 3's 16:9 case shares), as in the file"
+  },
+  {
+   "ram_address": "0x1fa16c",
+   "bytes": "4ff002094ff0010a",
+   "note": "code 2's 4:3 ratio (2, 1), as in the file"
+  },
+  {
+   "ram_address": "0x1fa28c",
+   "bytes": "1ffa8af148434fea490110fa81f01ffa",
+   "note": "the height calculation (width x n + 2d) / d, as in the file"
+  },
+  {
+   "ram_address": "0x1fa310",
+   "bytes": "cdccccccccccf43f000000000000f83f",
+   "note": "the pillarbox factors 1.3, 1.5 (doubles), as in the file"
+  },
+  {
+   "ram_address": "0x721e3c",
+   "bytes": "f0b503af2de9000b1546804699460c46",
+   "note": "first 16 bytes of the input-crop function 0x721e3c, as in the file"
+  },
+  {
+   "ram_address": "0x721e60",
+   "bytes": "06462868d0f89817284688470078012e",
+   "note": "the crop function's read of the code and the path flag test, as in the file"
+  },
+  {
+   "ram_address": "0x721e74",
+   "bytes": "40f08680a07f052858d00228",
+   "note": "the first crop path after its code test, as in the file"
+  },
+  {
+   "ram_address": "0x721ea0",
+   "bytes": "42029208a8f810206ae000f0",
+   "note": "the end of the first path before the second code test, as in the file"
+  },
+  {
+   "ram_address": "0x721eb0",
+   "bytes": "68d1a07f052818bf022863d1b9f1040f",
+   "note": "the second crop path after its code test, as in the file"
+  },
+  {
+   "ram_address": "0x721efc",
+   "bytes": "1200062101eb80004af6ab21caf6aa21",
+   "note": "the centre 4:3 width (4h + 6) / 3, as in the file"
+  },
+  {
+   "ram_address": "0x721544",
+   "bytes": "40f0b680d8f80000d0f8981740468847",
+   "note": "the device rectangle's read of the code before its first test (0x7214b6), as in the file"
+  },
+  {
+   "ram_address": "0x721558",
+   "bytes": "09d0d8f80000d0f89817404688470078",
+   "note": "between the device rectangle's two code tests, as in the file"
+  },
+  {
+   "ram_address": "0x72156c",
+   "bytes": "a380d8f80000d0f88816404688470246",
+   "note": "the device rectangle's path after its code tests, as in the file"
+  },
+  {
+   "ram_address": "0xf7970c",
+   "bytes": "6b000000aa01e001",
+   "note": "cpActAfWindow row 1, the entry before the 16:9 entry (1:1 on the rear panel: 107, 0, 426, 480), as in the file"
+  },
+  {
+   "ram_address": "0xf7971c",
+   "bytes": "0000320080027c01",
+   "note": "cpActAfWindow row 1, the entry after the 16:9 entry (fifth aspect: 0, 50, 640, 380), as in the file"
+  },
+  {
+   "ram_address": "0xf79784",
+   "bytes": "6b000000aa01e001",
+   "note": "cpActAfWindowRemoteSend row 1, the entry before the 16:9 entry (1:1 on the rear panel: 107, 0, 426, 480), as in the file"
+  },
+  {
+   "ram_address": "0xf79794",
+   "bytes": "0000320080027c01",
+   "note": "cpActAfWindowRemoteSend row 1, the entry after the 16:9 entry (fifth aspect: 0, 50, 640, 380), as in the file"
+  },
+  {
+   "ram_address": "0xf797fc",
+   "bytes": "6b000000aa01e001",
+   "note": "cpActTrackingFrame row 1, the entry before the 16:9 entry (1:1 on the rear panel: 107, 0, 426, 480), as in the file"
+  },
+  {
+   "ram_address": "0xf7980c",
+   "bytes": "0000320080027c01",
+   "note": "cpActTrackingFrame row 1, the entry after the 16:9 entry (fifth aspect: 0, 50, 640, 380), as in the file"
+  }
+ ]
+}

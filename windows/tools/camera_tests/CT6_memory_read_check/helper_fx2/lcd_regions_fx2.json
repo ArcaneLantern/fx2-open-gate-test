@@ -1,0 +1,10 @@
+{
+ "about": "Where the screen design lcd32dsq_fx2_v1 may have a site, and where only a guard (FX2 1.01 cpapp-b.bin addresses; build/build_lcd_fx2.py, modding/FX2_PORT_SCREEN.md). Read by gen_fx2_write.py.",
+ "lcd32dsq_fx2_v1": {
+  "sites": [["0x1f9ee8", "0x1f9f00"], ["0x1fa0e8", "0x1fa16c"], ["0x721e70", "0x721eb0"], ["0x721554", "0x72156c"],
+            ["0xf796d4", "0xf7974c"], ["0xf7974c", "0xf797c4"], ["0xf797c4", "0xf7983c"]],
+  "sites_note": "fit-mode words of the VDF fit function 0x1f9e98; the de-squeeze calculator 0x1fa0c0's ratio words; the two code tests of the 2.0x crop in 0x721e3c; the two code tests of the output rectangle in 0x7214b6; the three frame tables (cpActAfWindow, cpActTrackingFrame, the third widget)",
+  "guards": [["0x1f9e98", "0x1f9f2c"], ["0x1fa0c0", "0x1fa328"], ["0x721e3c", "0x721f8c"], ["0x7214b6", "0x721768"]],
+  "guards_note": "a guard may also lie in the fit function and its tables, the de-squeeze calculator, the crop function or the output-rectangle function"
+ }
+}

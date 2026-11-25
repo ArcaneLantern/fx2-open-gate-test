@@ -1,0 +1,290 @@
+"""FX2 (ILME-FX2) firmware 1.01: apply, or put back, the open-gate state in the camera's MEMORY.
+
+  python fx2_apply.py apply    [--no-screen] [--no-meta] [--dry-run] [--no-movie-session]
+  python fx2_apply.py putback  [--no-screen] [--dry-run]
+  python fx2_apply.py screen | screen-putback  [--dry-run]
+
+The FX2 counterpart of fx3_apply.py (the FX3 kit, which records open gate on two FX3s). The FX2 is the A7 IV's sensor (IMX710 class)
+on the A7C II's platform, so its open-gate steps are the A7 IV kit's (its default state since 2026-11-18, true 3840x2560 files of the
+whole 3:2 sensor area in XAVC HS 4K and XAVC S 4K at 24p, with the MP4 header fix since 2026-11-24), ported to the FX2 1.01 and
+checked against the FX2's own code in emulation. NOTHING OF THIS KIT HAS RUN ON AN FX2.
+
+  apply    five steps, each its own USB session: L13 raw write buffer (dmmwb4688_fx2_v1), L5 sensor side (ogsq_fx2_v1), L16 output size
+           (outsz2560_fx2_v1), L19 encoder side with the MP4 headers (ogfile2560_hs_s_fx2_v2), S16 rear screen at 3:2 with the focus frames
+           and the camera's own De-Squeeze Display set for the 3:2 picture (lcd32dsq_fx2_v1). Afterwards: XAVC HS 4K or XAVC S 4K at
+           23.98p only. With --no-screen only the first four; with --no-meta the encoder step without the MP4 header heights (N19).
+           A step that finds its bytes already applied says NOTHING TO DO and counts as passed.
+  putback  the reverse: S17, L20, L17, L6, L14 (with --no-screen the last four). A cold boot (battery out for 10 seconds) also undoes everything.
+  screen / screen-putback   only the screen step (S16) or its put back (S17).
+
+There is no preview-key routine in this kit: the FX2's own De-Squeeze Display (Off, 1.3x, 2.0x on 1.01) is kept, and S16 sets its ratios
+for the 3:2 picture.
+
+The closing session (apply and screen): one read-only dump taken with the switch on MOVIE, so that the first FX2 results show the sensor
+in its full-height mode and the rear panel's type. Nothing is written in that session.
+
+Rules it keeps:
+- It starts only if the newest saved read-only check of this kit says VERDICT READY.
+- It stops at the first step that does not end in DONE or NOTHING TO DO, and says what state that leaves.
+- Each step is one pinned library; the runner (fx2_run.py) refuses any other bytes.
+Nothing is written to a firmware file or to the camera's settings. What is written lives in the running camera's memory. A cold
+boot (battery out for 10 seconds) removes it. Whether the power switch alone does is not known on the FX2 (on the A7 IV it does not,
+on the A7S III it does), so keep the FX2 switched on from the first step to the last.
+"""
+import argparse
+import json
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE.parent / "CT1_usb_first_contact"))
+sys.path.insert(0, str(HERE))
+import ct1_common as c  # noqa: E402
+import fx2_run  # noqa: E402
+
+FIRMWARE = fx2_run.FIRMWARE
+STEPS = {"apply": ("L13", "L5", "L16", "L19"), "putback": ("L20", "L17", "L6", "L14"), "screen": ("S16",), "screen-putback": ("S17",)}
+RUNNER = HERE / "fx2_run.py"
+LISTER = HERE.parent / "CT1_usb_first_contact" / "ct1_stage2_service.py"
+STILL = "STILL (the Still/Movie switch on STILL)"
+MOVIE = "MOVIE (the Still/Movie switch on MOVIE; File Format XAVC HS 4K or XAVC S 4K, 24p)"
+
+
+def say(text=""):
+    print(text, flush=True)
+
+
+def sessions():
+    """Saved sessions of this kit, newest first: (folder, manifest)."""
+    root = c.PRIVATE_ROOT
+    out = []
+    if root.is_dir():
+        for folder in sorted((p for p in root.iterdir() if p.is_dir() and p.name.startswith("CT6_")), reverse=True):
+            try:
+                out.append((folder, json.loads((folder / "manifest.json").read_text(encoding="utf8"))))
+            except (OSError, ValueError):
+                continue
+    return out
+
+
+def last_check():
+    """The newest saved read-only check of this kit that fetched a result: (folder name, ready?) or None. A check that stopped before the
+    camera answered (no driver yet, no camera seen, an old result on the RAM disk) says nothing and is skipped. A check made with another
+    kit (the FX3's fx3read, the A7S III's s3read, the ZV-E1's zvread) does not count: its header is not this helper's."""
+    for folder, man in sessions():
+        res = man.get("results", {})
+        f = (res.get("ct6", {}).get("result") or {}).get("s3")
+        if res.get("which") in ("check", "dump") and f:       # a dump makes every check the check makes, and gives the same verdict
+            current = "fx2read_v1 " in f.get("header", "") and "ILME-FX2 1.01" in f.get("header", "")
+            return folder.name, current and bool(f.get("ready")) and not f.get("identity_differs")
+    return None
+
+
+def last_result_sha():
+    """The SHA-256 of the result the newest session fetched: the runner deletes a result left on the RAM disk only if it has this hash."""
+    for _, man in sessions():
+        try:
+            return man["results"]["ct6"]["result"]["sha256"]
+        except (KeyError, TypeError):
+            continue
+    return None
+
+
+def usb_state():
+    r = subprocess.run([sys.executable, "-I", "-B", str(LISTER), "--list"], capture_output=True, text=True, encoding="utf8", errors="replace", cwd=str(LISTER.parent))
+    import re
+    m = re.search(r"libusb sees: (\d+) Sony mass-storage device\(s\).*?, (\d+) Sony service device\(s\)", r.stdout)
+    if not m:
+        return "other"
+    return "drive" if int(m.group(1)) == 1 and int(m.group(2)) == 0 else "service" if int(m.group(2)) else "other"
+
+
+def wait_for_drive(first, timeout=600):
+    asked, end = False, time.time() + timeout
+    while usb_state() != "drive":
+        if not asked:
+            say()
+            if first:
+                say("The camera is not showing as a USB drive. Turn it on with the switch on %s, connect USB (USB Connection Mode: Mass Storage)." % STILL)
+            else:
+                say(">>> Unplug the USB cable from the camera and plug it in again.")
+                say(">>> Do NOT power the camera off or pull the battery: that would leave the steps half done.")
+            say("Waiting for the camera (Ctrl+C to stop) ...")
+            asked = True
+        if time.time() > end:
+            return False
+        time.sleep(2)
+    return True
+
+
+def wait_for_replug(timeout=900):
+    """Wait until the camera has been unplugged and shows up as a USB drive again. False on timeout."""
+    end = time.time() + timeout
+    while usb_state() != "other":                    # still plugged in, as a drive or in service mode
+        if time.time() > end:
+            return False
+        time.sleep(1)
+    while usb_state() != "drive":
+        if time.time() > end:
+            return False
+        time.sleep(2)
+    return True
+
+
+def movie_session():
+    """The closing read-only session, taken in movie mode: it shows the sensor in the open-gate mode and the panel type."""
+    say()
+    say("=" * 78)
+    say("One more session, and it only READS: it records the sensor's state in Movie and the rear panel's type for the first FX2 results.")
+    say(">>> 1. Unplug the USB cable.")
+    say(">>> 2. Set %s." % MOVIE)
+    say("       Look at the rear screen for five seconds and remember what it shows (the whole 3:2 picture? anything wrong?).")
+    say(">>> 3. Plug the USB cable in again, still on MOVIE.")
+    say(">>> Do NOT switch the camera off: that may remove the patch.")
+    say("Waiting for the unplug and the replug (Ctrl+C to stop; the patch stays applied either way) ...")
+    if not wait_for_replug():
+        say("The camera did not come back as a USB drive. The steps are applied all the same.")
+        return
+    cmd = [sys.executable, "-I", "-B", str(RUNNER), "dump", "--go", "--firmware-shown", FIRMWARE]
+    clear = last_result_sha()
+    if clear:
+        cmd += ["--clear-result", clear]
+    rc = subprocess.run(cmd).returncode
+    which, f = step_outcome()
+    say()
+    if rc or which != "dump" or not f:
+        say("The read-only session did not finish. The steps are applied all the same.")
+        return
+    decoded = f.get("decoded") or {}
+    column = (decoded.get("sensor_registers") or {}).get("closest_column")
+    if column != fx2_run.FULL_HEIGHT_COLUMN:         # the open-gate 4K 24p mode reads the sensor with register column 5 (as on the A7 IV)
+        say("NOTE: before this session the sensor was not in the full-height 4K 24p mode (register column %s, not %d)." % (column, fx2_run.FULL_HEIGHT_COLUMN))
+        say("      Was the camera on MOVIE, at 4K 24p? If not: set it, replug, and run dump_info once more.")
+    panel = (decoded.get("display") or {}).get("panel_types")
+    if panel:
+        say("The rear panel reports type %d (%s). Please send this folder: it settles the FX2's panel shape." % (panel["rear_0x19d98cc"], panel["rear_aspect"]))
+    say(">>> Unplug USB now.")
+
+
+def step_outcome():
+    for _, man in sessions():
+        f = man.get("results", {}).get("ct6", {}).get("result", {}).get("s3")
+        return (man.get("results", {}).get("which"), f) if f else (None, None)
+    return None, None
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("what", choices=sorted(STEPS))
+    ap.add_argument("--dry-run", action="store_true", help="show the steps and what each would send; nothing is sent")
+    ap.add_argument("--no-screen", action="store_true", help="with apply or putback: only the four open-gate steps, without the screen step")
+    ap.add_argument("--no-movie-session", action="store_true", help="with apply or screen: leave out the closing read-only session in movie mode")
+    ap.add_argument("--no-meta", action="store_true", help="with apply: the encoder step without the MP4 header heights (N19); the headers keep saying 3840x2160")
+    a = ap.parse_args()
+    steps = STEPS[a.what]
+    if a.no_screen and a.what not in ("apply", "putback"):
+        raise SystemExit("--no-screen goes with apply or putback. Nothing was sent.")
+    if a.no_meta and a.what != "apply":
+        raise SystemExit("--no-meta goes with apply (the put back L20 puts back either encoder step). Nothing was sent.")
+    if a.no_meta:
+        steps = tuple("N19" if k == "L19" else k for k in steps)
+    with_screen = not a.no_screen
+    if a.what in ("apply", "putback") and with_screen:
+        steps = steps + STEPS["screen"] if a.what == "apply" else STEPS["screen-putback"] + steps
+    applying = a.what in ("apply", "screen")
+    closing = a.what in ("apply", "screen")
+    for k in steps:                                  # every library must be the pinned one before anything starts
+        name, sha, _ = fx2_run.WRITE_STEPS[k]
+        p = fx2_run.S3 / name
+        if not p.is_file() or c.sha256(p.read_bytes()) != sha:
+            raise SystemExit("%s is missing or is not the pinned build. Nothing was sent." % name)
+    say("FX2 1.01, %s: %d steps" % (a.what, len(steps)))
+    for n, k in enumerate(steps, 1):
+        say("  %d. %s  %s  (library %s...)" % (n, k, fx2_run.WRITE_STEPS[k][2], fx2_run.WRITE_STEPS[k][1][:16]))
+    if closing and not a.no_movie_session:
+        say("  then one read-only session (dump) on MOVIE: the sensor's state and the panel type for the first FX2 results. Nothing is written in it.")
+    if a.dry_run:
+        for k in steps:
+            say()
+            say("--- %s, what the session would send:" % k)
+            r = subprocess.run([sys.executable, "-I", "-B", str(RUNNER), k, "--dry-run"], capture_output=True, text=True, encoding="utf8", errors="replace")
+            say(r.stdout.rstrip() or r.stderr.rstrip())
+        say()
+        say("Dry run only: nothing was sent to any device.")
+        return
+    chk = last_check()
+    if applying and (chk is None or not chk[1]):
+        raise SystemExit("The newest saved read-only check of this kit %s. Run check_readonly first and get VERDICT READY. Nothing was sent."
+                         % ("does not exist" if chk is None else "(%s) does not say READY" % chk[0]))
+    say()
+    say("This WRITES into the running camera's memory (not its firmware, not its settings).")
+    if applying:
+        say("NOTHING OF THIS KIT HAS RUN ON AN FX2 YET. The same steps work on an A7 IV (the FX2's sensor); every FX2 site was checked")
+        say("  against the FX2's own files and code in emulation, and each step writes nothing unless its bytes are exactly the FX2 1.01 stock bytes.")
+    else:
+        say("It has to follow an apply of this kit.")
+    say("A cold boot (battery out for 10 seconds) returns the camera to stock. Whether the power switch alone does on the FX2 is not known:")
+    say("so KEEP THE CAMERA SWITCHED ON from now until the script says it is finished.")
+    if a.what == "apply":
+        say("Before you go on: the switch on %s, a charged battery," % STILL)
+        say("and a camera that was cold booted and has not been on MOVIE or S&Q since. (If it starts on MOVIE: set the switch to STILL,")
+        say("pull the battery for 10 seconds, put it back and switch on.) Step L13 changes the memory manager and needs that state.")
+        say("(If the open-gate state is already applied in this power-on, its steps will say NOTHING TO DO: that is fine.)")
+    else:
+        say("Before you go on: a charged battery, and the switch on %s." % STILL)
+    if input("Firmware version in the camera's menu: ").strip() != FIRMWARE:
+        raise SystemExit("Not %s. Nothing was sent." % FIRMWARE)
+    if input("Type YES to write to the camera's memory: ").strip() != "YES":
+        raise SystemExit("Not confirmed. Nothing was sent.")
+    for n, k in enumerate(steps, 1):
+        if not wait_for_drive(n == 1):
+            raise SystemExit("The camera did not show up as a USB drive. Stopped before step %d (%s)." % (n, k))
+        say()
+        say("=" * 78)
+        say("Step %d of %d: %s, %s" % (n, len(steps), k, fx2_run.WRITE_STEPS[k][2]))
+        cmd = [sys.executable, "-I", "-B", str(RUNNER), k, "--go", "--writes-memory", "--firmware-shown", FIRMWARE]
+        clear = last_result_sha()
+        if clear:
+            cmd += ["--clear-result", clear]
+        rc = subprocess.run(cmd).returncode
+        which, f = step_outcome()
+        if rc or which != k or not f or not f.get("ok"):
+            say()
+            say("STOPPED at step %d (%s): %s" % (n, k, "the session did not finish" if rc or which != k or not f else "outcome " + f["outcome"]))
+            say("Steps before it are %s. To be sure of the camera's state: cold boot it (battery out for 10 seconds)." % ("applied" if applying else "put back"))
+            if k == "L13" and f and "nothing is written" in " ".join(f.get("problem_lines", []) + [str(f.get("outcome_line"))]):
+                say("L13 refuses while the movie memory is still laid out the stock way: cold boot with the switch on STILL, then apply again.")
+            say("Please send the newest folders in camera_private.")
+            raise SystemExit(1)
+    say()
+    say("All %d steps passed (%s)." % (len(steps), a.what))
+    if a.what == "apply":
+        if a.no_meta:
+            say("The files' MP4 headers say 3840x2160 (--no-meta): editors may open them squeezed; a remux to 3840x2560 fixes that.")
+        else:
+            say("The files' MP4 headers (tkhd, stsd, Sony's PROF) now say 3840x2560: editors should open them at 3:2 without a remux.")
+            say("  Sony's XML (in the file and the sidecar) still says 3840x2160, 16:9.")
+        say("In-camera playback: the FX2 opens playback with the A7 IV's decoder channel, which plays these clips on an A7 IV. Not tried on an FX2:")
+        say("  if a clip says 'Unable to display', do NOT try again (on an FX3 a retry froze the camera); check the clips on a computer and report it.")
+    if with_screen and applying:
+        say("The screen step: on MOVIE the 3:2 rear screen should now be filled with the whole picture at its true shape. A circle should look round.")
+        say("  The viewfinder (a 4:3 panel) keeps showing the picture squeezed, as on the A7 IV.")
+        say("  De-Squeeze Display (in the menu's Display Option) now de-squeezes the 3:2 picture: 1.3x shows 1.95:1, 2.0x 3:1 (the whole frame;")
+        say("  the stock centre crop is off). The file does not change. While it is applied every 16:9 picture is shown stretched to 3:2")
+        say("  (other movie formats look wrong on the rear screen). Please report: the screen with De-Squeeze Display Off, 1.3x and 2.0x,")
+        say("  and whether the focus and tracking frames sit on the subject.")
+    if closing:
+        if a.no_movie_session:
+            say(">>> Unplug USB, then set %s." % MOVIE)
+        else:
+            movie_session()
+        say()
+        say("Use only XAVC HS 4K or XAVC S 4K at 24p (23.98p) while it is applied: other 4K formats and frame rates are not set up and fail.")
+        say("If the camera stops or restarts: do NOT pull the battery yet. Set the switch to STILL, replug USB and run dump_info, then send camera_private.")
+        say("To return to stock: battery out for 10 seconds.")
+
+
+if __name__ == "__main__":
+    main()

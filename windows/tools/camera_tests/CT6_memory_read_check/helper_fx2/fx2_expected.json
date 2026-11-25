@@ -1,0 +1,350 @@
+{
+ "label": "fx2read_v1",
+ "cp_lo": 786432,
+ "cp_hi": 40894464,
+ "avcam_phys": 17196646400,
+ "avcam_reserve": "@0x401000000",
+ "id_files": {
+  "/libmpr.so": "c749bfaf0bf66421509870458c26ba89599083bdc08f2d6d36c2e8cb30ef2950",
+  "/libsencore.so": "63a0bc72143b58a39e7e33d5f4744e22f8c9060862494e654866dd1c31bcd175",
+  "/libJiritsu.so": "d16b70b09f118bc8b0a341174f511f076793c57c2678943534b4f65686b5881e"
+ },
+ "id_pages": {
+  "0x128000": "f7c8064b48aaac247d6bbb7f549070264b994ca40e38a085ec0044fdba15f8a9",
+  "0x27a000": "2384046cd9bc514d20b5ebf1eecf88e43f26ff7ed55d0947b6f56c43a1635da2",
+  "0x4ff000": "f91f9b2f484339b254e3e426eb837945c293004972d2ff99f9383ef07ddbc2e7",
+  "0xa0f000": "53812241adbf90a2f342be65ccb2d4cbd35c2334fa1f378fac6f834993d49243"
+ },
+ "cp_sites": [
+  {
+   "name": "S4",
+   "address": "0xe40752",
+   "length": 2,
+   "soft": 0
+  },
+  {
+   "name": "S2",
+   "address": "0xe945fe",
+   "length": 2,
+   "soft": 0
+  },
+  {
+   "name": "S5",
+   "address": "0xf990b6",
+   "length": 2,
+   "soft": 0
+  },
+  {
+   "name": "S1",
+   "address": "0xf990ba",
+   "length": 2,
+   "soft": 0
+  },
+  {
+   "name": "S6",
+   "address": "0xf990be",
+   "length": 2,
+   "soft": 0
+  },
+  {
+   "name": "S10",
+   "address": "0xf9957a",
+   "length": 2,
+   "soft": 0
+  },
+  {
+   "name": "S7",
+   "address": "0xf99938",
+   "length": 2,
+   "soft": 0
+  },
+  {
+   "name": "S8",
+   "address": "0xf9993c",
+   "length": 2,
+   "soft": 0
+  },
+  {
+   "name": "S9",
+   "address": "0xf99b34",
+   "length": 2,
+   "soft": 0
+  },
+  {
+   "name": "S3",
+   "address": "0xf99b3c",
+   "length": 2,
+   "soft": 0
+  },
+  {
+   "name": "S0",
+   "address": "0x11eb1b8",
+   "length": 4,
+   "soft": 0
+  },
+  {
+   "name": "record_left",
+   "address": "0xdf9958",
+   "length": 3000,
+   "soft": 0
+  },
+  {
+   "name": "record_right",
+   "address": "0xdfa510",
+   "length": 3000,
+   "soft": 0
+  },
+  {
+   "name": "stored_record",
+   "address": "0x24de78c",
+   "length": 368,
+   "soft": 1
+  },
+  {
+   "name": "outsize",
+   "address": "0x18f60f8",
+   "length": 4,
+   "soft": 1
+  },
+  {
+   "name": "outsize_guard0",
+   "address": "0x18f60f0",
+   "length": 8,
+   "soft": 1
+  },
+  {
+   "name": "outsize_guard1",
+   "address": "0x18f60fc",
+   "length": 4,
+   "soft": 1
+  },
+  {
+   "name": "screen0",
+   "address": "0x1f9eec",
+   "length": 4,
+   "soft": 1
+  },
+  {
+   "name": "screen1",
+   "address": "0x1fa0e8",
+   "length": 4,
+   "soft": 1
+  },
+  {
+   "name": "screen2",
+   "address": "0x1fa0ec",
+   "length": 4,
+   "soft": 1
+  },
+  {
+   "name": "screen3",
+   "address": "0x1fa120",
+   "length": 4,
+   "soft": 1
+  },
+  {
+   "name": "screen4",
+   "address": "0x1fa124",
+   "length": 4,
+   "soft": 1
+  },
+  {
+   "name": "screen5",
+   "address": "0x1fa154",
+   "length": 4,
+   "soft": 1
+  },
+  {
+   "name": "screen6",
+   "address": "0x1fa164",
+   "length": 4,
+   "soft": 1
+  },
+  {
+   "name": "screen7",
+   "address": "0x1fa168",
+   "length": 4,
+   "soft": 1
+  },
+  {
+   "name": "screen8",
+   "address": "0x721554",
+   "length": 4,
+   "soft": 1
+  },
+  {
+   "name": "screen9",
+   "address": "0x721568",
+   "length": 4,
+   "soft": 1
+  },
+  {
+   "name": "screen10",
+   "address": "0x721e70",
+   "length": 4,
+   "soft": 1
+  },
+  {
+   "name": "screen11",
+   "address": "0x721eac",
+   "length": 4,
+   "soft": 1
+  },
+  {
+   "name": "screen12",
+   "address": "0xf79714",
+   "length": 4,
+   "soft": 1
+  },
+  {
+   "name": "screen13",
+   "address": "0xf79718",
+   "length": 4,
+   "soft": 1
+  },
+  {
+   "name": "screen14",
+   "address": "0xf7978c",
+   "length": 4,
+   "soft": 1
+  },
+  {
+   "name": "screen15",
+   "address": "0xf79790",
+   "length": 4,
+   "soft": 1
+  },
+  {
+   "name": "screen16",
+   "address": "0xf79804",
+   "length": 4,
+   "soft": 1
+  },
+  {
+   "name": "screen17",
+   "address": "0xf79808",
+   "length": 4,
+   "soft": 1
+  },
+  {
+   "name": "rawbuf_size0",
+   "address": "0x24838c8",
+   "length": 4,
+   "soft": 0
+  },
+  {
+   "name": "rawbuf_size1",
+   "address": "0x24838dc",
+   "length": 4,
+   "soft": 0
+  },
+  {
+   "name": "rawbuf_key2",
+   "address": "0x2483860",
+   "length": 4,
+   "soft": 0
+  },
+  {
+   "name": "rawbuf_key3",
+   "address": "0x2483874",
+   "length": 4,
+   "soft": 0
+  }
+ ],
+ "lm_sites": 6,
+ "av_sites": 101,
+ "av_guards": [
+  "unit_rows_0_2",
+  "clip_rows_2_7",
+  "descriptors_7_10"
+ ],
+ "dump_ranges": [
+  [
+   "shadow",
+   "0x12fe000",
+   1
+  ],
+  [
+   "matrix",
+   "0x11ea000",
+   2
+  ],
+  [
+   "sizetable",
+   "0x18f6000",
+   1
+  ],
+  [
+   "records",
+   "0x24dd000",
+   4
+  ],
+  [
+   "kprint",
+   "0xe0000",
+   32
+  ],
+  [
+   "bootlog",
+   "0xc0000",
+   8
+  ],
+  [
+   "resizestate",
+   "0x190c000",
+   3
+  ],
+  [
+   "resizework",
+   "0x15e4000",
+   1
+  ],
+  [
+   "dmmglobals",
+   "0x192f000",
+   1
+  ],
+  [
+   "dmmrecs",
+   "0x2483000",
+   1
+  ],
+  [
+   "dmmparents",
+   "0x2481000",
+   1
+  ],
+  [
+   "paneltype",
+   "0x19d9000",
+   1
+  ],
+  [
+   "display0",
+   "0x1f9000",
+   1
+  ],
+  [
+   "display1",
+   "0x1fa000",
+   1
+  ],
+  [
+   "display2",
+   "0x721000",
+   1
+  ],
+  [
+   "display3",
+   "0xf79000",
+   1
+  ]
+ ],
+ "designs": {
+  "ogsq_fx2_v1": "88686819aba4537766903f84c8521d6879f436967eca30f80972ecf7e7467f60",
+  "outsz2560_fx2_v1": "d128624006e0df75088a1f9987a16daa183d4fa8ed76df9327f98d8cae0953d5",
+  "ogfile2560_hs_s_fx2_v2": "d5bad42782b81dd17bda2552ce639edae909de82aa70f28ecad68a1a73b63406",
+  "lcd32dsq_fx2_v1": "4a8831b7e9a2b217d1c49cd45ef5f4c35eb440647d22dd080713ea3a8479b0d2",
+  "dmmwb4688_fx2_v1": "c85548d111b790ef88d412cf126d078fa5ed67bd2bd7c95ea9567f581d355b93"
+ }
+}

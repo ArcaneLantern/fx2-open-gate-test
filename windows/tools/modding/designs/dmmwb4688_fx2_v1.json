@@ -1,0 +1,140 @@
+{
+ "design": "dmmwb4688_fx2_v1",
+ "title": "Memory-only DMM change: the movie raw write buffer (memory id 0x43e) grows from 7040 x 3958 to 7040 x 4688 bytes",
+ "artifact": "coprocessor RAM (the DMM server's copy of /cp/DmmCfg.bin); no file is changed",
+ "generated_by": "build/build_dmm_sites.py dmmwb4688_fx2_v1 4688 --build fx2_101",
+ "build": "fx2_101",
+ "groups": {
+  "grow": "0x8d",
+  "steer": "0x8c"
+ },
+ "summary": {
+  "sites": 4,
+  "bytes": 16,
+  "rows": 4688,
+  "unit_size": 33003520,
+  "stock_unit_size": 27864320,
+  "parent_key": "0x6fa",
+  "parent_size": 73400320,
+  "left_free_in_the_parent": 7393280,
+  "cache_lines_64": [
+   "0x2483840",
+   "0x24838c0"
+  ],
+  "largest_rows_that_fit": 5213
+ },
+ "precondition": "no unit object of key 0x57f, 0x634 or 0x635 exists when the words are written (every 0x6fa parent undivided, or divided as another group): an existing division keeps its old units and the server reuses them",
+ "restore": "write the old words back while the same precondition holds, or cold boot (the tables are rebuilt from /cp/DmmCfg.bin)",
+ "checked_in_the_firmware_allocator": {
+  "tool": "build/emu_dmm_server.py (the server's own code, alone; see its header for what is made up)",
+  "applied_before_any_open": {
+   "six_opens_of_0x43e": [
+    [
+     {
+      "address": "0x500000000",
+      "size": 33003520
+     }
+    ],
+    [
+     {
+      "address": "0x501f79800",
+      "size": 33003520
+     }
+    ],
+    [
+     {
+      "address": "0x504600000",
+      "size": 33003520
+     }
+    ],
+    [
+     {
+      "address": "0x506579800",
+      "size": 33003520
+     }
+    ],
+    [
+     {
+      "address": "0x508c00000",
+      "size": 33003520
+     }
+    ],
+    [
+     {
+      "address": "0x50ab79800",
+      "size": 33003520
+     }
+    ]
+   ],
+   "open_0x4b7": [
+    {
+     "address": "0x510725a00",
+     "size": 3317760
+    }
+   ],
+   "open_0x4b8": [
+    {
+     "address": "0x510a4fa00",
+     "size": 13271040
+    }
+   ],
+   "seventh_open_of_0x43e": "no group offers the key now (0xfeff)",
+   "all_inside_a_parent_and_disjoint": true,
+   "all_freed": true
+  },
+  "applied_while_a_sibling_of_the_old_division_is_in_use": {
+   "sizes_returned_afterwards": [
+    27864320,
+    27864320
+   ],
+   "meaning": "the old division stays and its stock-size units are handed out again: the change has no effect, and no error is reported"
+  },
+  "stock_control": [
+   27864320,
+   27864320
+  ]
+ },
+ "not_shown": [
+  "what the camera has open when the words would be written, and which scene it is in (a read on the camera)",
+  "that the image hardware accepts the taller first stage once the buffer is large enough (only the camera can show it)",
+  "the first stage's throughput at 18% more rows"
+ ],
+ "sites": [
+  {
+   "ram_address": "0x24838c8",
+   "what": "size of a key 0x57f record of group 0x8d",
+   "file_offset_of_the_same_field": "0x7f8c",
+   "old": "002da901",
+   "new": "0098f701",
+   "old_value": 27864320,
+   "new_value": 33003520
+  },
+  {
+   "ram_address": "0x24838dc",
+   "what": "size of a key 0x57f record of group 0x8d",
+   "file_offset_of_the_same_field": "0x7fa0",
+   "old": "002da901",
+   "new": "0098f701",
+   "old_value": 27864320,
+   "new_value": 33003520
+  },
+  {
+   "ram_address": "0x2483860",
+   "what": "key of a key 0x57f record of group 0x8c",
+   "file_offset_of_the_same_field": "0x7ed4",
+   "old": "7f050000",
+   "new": "fe080000",
+   "old_value": "0x57f",
+   "new_value": "0x8fe"
+  },
+  {
+   "ram_address": "0x2483874",
+   "what": "key of a key 0x57f record of group 0x8c",
+   "file_offset_of_the_same_field": "0x7ee8",
+   "old": "7f050000",
+   "new": "fe080000",
+   "old_value": "0x57f",
+   "new_value": "0x8fe"
+  }
+ ]
+}
