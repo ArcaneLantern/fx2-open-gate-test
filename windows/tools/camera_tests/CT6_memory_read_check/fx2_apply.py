@@ -59,8 +59,11 @@ import fx2_run  # noqa: E402
 
 FIRMWARE = fx2_run.FIRMWARE
 STEPS = {"apply": ("L13", "L5", "L16", "L19"), "putback": ("L20", "L17", "L6", "L14"), "screen": ("S16",), "screen-putback": ("S17",),
-         "test1": ("L13", "B5"), "test2": ("L13", "L5"), "test3": ("L13", "L5", "L16"), "test4": ("L13", "L5", "L16", "L19")}
-TESTS = ("test1", "test2", "test3", "test4")
+         "test1": ("L13", "B5"), "test2": ("L13", "L5"), "test3": ("L13", "L5", "L16"), "test4": ("L13", "L5", "L16", "L19"),
+         # squeeze (2026-11-26, ran on an FX2): test 2 plus the screen step. The file is 3840x2160 holding the whole 3:2 sensor area squeezed
+         # 27/32 vertically, and the 3:2 rear screen shows it at its true shape. No output-size or encoder step (test 3 crashes on MOVIE entry).
+         "squeeze": ("L13", "L5", "S16")}
+TESTS = ("test1", "test2", "test3", "test4", "squeeze")
 RUNNER = HERE / "fx2_run.py"
 LISTER = HERE.parent / "CT1_usb_first_contact" / "ct1_stage2_service.py"
 STILL = "STILL (the Still/Movie switch on STILL)"
@@ -92,7 +95,7 @@ def last_check():
         res = man.get("results", {})
         f = (res.get("ct6", {}).get("result") or {}).get("s3")
         if res.get("which") in ("check", "dump") and f:       # a dump makes every check the check makes, and gives the same verdict
-            current = any(v in f.get("header", "") for v in ("fx2read_v1 ", "fx2read_v2 ")) and "ILME-FX2 1.01" in f.get("header", "")
+            current = any(v in f.get("header", "") for v in ("fx2read_v1 ", "fx2read_v2 ", "fx2read_v3 ")) and "ILME-FX2 1.01" in f.get("header", "")
             return folder.name, current and bool(f.get("ready")) and not f.get("identity_differs")
     return None
 
