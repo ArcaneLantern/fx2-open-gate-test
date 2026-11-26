@@ -1,6 +1,6 @@
 # FX2 open gate: test kit (firmware 1.01)
 
-<p><b>Third kit (2026-11-26): test 2 works; tests 3 and 4 next.</b> Test 2 (raw write buffer + sensor step) runs on the FX2: steady picture, clips recorded, the whole sensor height in the picture. So the crash of the full apply comes from the output-size or the encoder step. Please run <code>test2_squeeze_only</code> once more (its dump now reads the output records), then <code>test3_output_size</code>, then <code>test4_output_size_encoder</code> (see "The diagnostic tests"), and send the folders. This kit ports the open gate that works on the A7 IV to the Sony FX2 (ILME-FX2) firmware 1.01. It records a true 3840 × 2560 picture of the whole 3:2 sensor area at 23.98p and makes the MP4 headers say 3840 × 2560. It also fills the FX2's 3:2 rear screen with the whole picture, and sets the FX2's own De-Squeeze Display for it. The patch only writes to the camera's memory.</p>
+<p><b>Fourth kit (2026-11-26): the cause of the crash is found, and there is a new test for a true 3840 × 2560 file.</b> The squeezed open gate (<code>open_gate_squeezed</code>) works on the FX2 today. The output-size step crashed because the FX2 tells its second scaler to expect at least as many rows as the output has, and our sensor step delivered fewer. The new sensor step H5 delivers them. Please run <code>test5_real_rows</code>, <code>test6_real_rows_output_size</code>, then <code>open_gate_3840x2560_test</code> (see "The fourth kit"), and send the folders. None of the three has run on an FX2 yet. This kit ports the open gate that works on the A7 IV to the Sony FX2 (ILME-FX2) firmware 1.01. The patch only writes to the camera's memory.</p>
 
 **Where it stands (2026-11-26):**
 
@@ -12,9 +12,15 @@
   - The dump on MOVIE: sensor in its full-height mode (register column 5), the stage the whole 7008 × 4672 window, the stored record as designed, and the raw write buffer in use at 33,003,520 bytes (the enlarged one).
   - So the full-height read-out, the enlarged buffer and the squeeze all work on the FX2, and **the crash of the full apply comes from L16 (output size) or L19 (encoder)**. The FX6 kit's bisection points the same way (its L16).
   - What the firmware shows: the FX2 chooses each output's buffer by its picture size. It has an output kind the A7 IV lacks, with a small fixed buffer, and at 3840 × 2560 some format codes would not fit the 13,271,040-byte buffers. The camera's own output records tell which applies: the dump now reads them.
-- **Third kit: tests 3 and 4** (and test 2 again for the output records). Each applies part of the kit and then reads the camera's state on MOVIE (see "The diagnostic tests").
-  - The read-only dump also reads the image processor's memory manager (which write buffer it opened, and at what size), and the first pages of the image it saves when it crashes.
-  - The full apply is unchanged; please run the tests first.
+- **Test 3 crashes; the squeezed open gate works (2026-11-26).** L13 + L5 + L16 crashes on MOVIE entry with the same forced exception, with or without the encoder step, in 4:2:2 and 4:2:0. So L16 (the output size) is the first failing step. L13 + L5 + S16 (`open_gate_squeezed`, a tester's pull request) runs and records.
+- **Why L16 crashed** (read from the FX2's code, then emulated; `PORT_NOTES.md`):
+  - It is not the output buffer. The camera's four output records are 3840 × 2160, 1920 × 1080, 1920 × 1080 and 3840 × 2160, all with format code 2, as on the A7 IV. A 3840 × 2560 picture is then 12,288,000 bytes and fits the 13,271,040-byte buffer. (The third kit read these records at a wrong address and showed zeros; the pages it saved hold them.)
+  - The FX2's resize set-up has a step the A7 IV lacks. After it reads the first scaler's picture size from the mode's records (4336 × 2438), it raises that size to at least the output size. With L16 it becomes 4336 × 2560, while the records still make the first scaler deliver 2,438 rows. The second scaler is told to expect rows that never come.
+  - Of the bodies we have firmware for, only the FX2 and the A1 II have that step. On the A7 IV, FX3 and A7S III the second scaler simply enlarges the picture.
+  - Run alone in emulation, the set-up gives byte for byte the values the tester's camera saved, in the stock state and in the working squeezed state.
+- **Fourth kit: the fix to test.** The A7 IV already has a design whose first scaler gives 4336 × 2560 (`ogh2560_v1`, it works there). It is ported as step **H5** and takes L5's place. With it the two sizes agree, and the file's 2,560 rows are real rows. A fallback (**F16**, one code word that keeps the first-scaler size) is in the kit for the case that H5 does not run.
+  - The read-only dump now shows the resize set-up's saved sizes and whether they agree with the records in place.
+  - `open_gate_apply` is unchanged and **still crashes on the FX2**: do not use it.
 - **Built and emulated.** Every step was checked against the FX2 1.01 firmware's own files and code (Unicorn), and every library was run against a model FX2 (`PORT_NOTES.md`).
 - **Why it should work.** The FX2 has the A7 IV's sensor:
   - the same video modes (plus two the A7 IV lacks);
@@ -34,7 +40,7 @@
 |---|---|---|
 | `check_readonly.cmd` | Confirms the camera runs the 1.01 software the port was made from and reads what every patch site holds. Verdict READY / NOT READY | No |
 | `dump_info.cmd` | The same, plus facts for the port: memory map, the camera's own logs, sensor register state, internal tables, the memory manager's records, the display (panel type, fit word, frame tables, de-squeeze words) | No |
-| `open_gate_apply.cmd` | Applies the default state in five steps: raw write buffer, sensor, output size, encoder (with the MP4 headers), then the rear screen at 3:2 with De-Squeeze Display set for it. Ends with one read-only session | **Yes: memory only** |
+| `open_gate_apply.cmd` | Applies the A7 IV's default state in five steps: raw write buffer, sensor, output size, encoder (with the MP4 headers), then the rear screen at 3:2 with De-Squeeze Display set for it. **Crashes on MOVIE entry on the FX2: use `open_gate_squeezed.cmd` or the fourth kit's tests** | **Yes: memory only** |
 | `open_gate_apply_no_screen.cmd` | Only the four open-gate steps | **Yes: memory only** |
 | `open_gate_apply_no_meta.cmd` | The default state with the encoder step that leaves the MP4 headers at 3840 × 2160 | **Yes: memory only** |
 | `open_gate_putback.cmd` | Puts the five steps back | Yes: memory only |
@@ -44,6 +50,10 @@
 | `open_gate_squeezed.cmd` | **Squeezed open gate** (ran on an FX2, 2026-11-26): raw write buffer + full-height sensor step + rear-screen step, then one read-only dump on MOVIE. A 3840 × 2160 file holding the whole 3:2 sensor area squeezed 27/32 vertically (stretch the height by 32/27 in the editor); the rear screen shows it at 3:2. No output-size or encoder step | **Yes: memory only** |
 | `test3_output_size.cmd` | **Diagnostic test 3** (third kit): test 2 + the output size (3840 × 2560), then one read-only dump on MOVIE | **Yes: memory only** |
 | `test4_output_size_encoder.cmd` | **Diagnostic test 4** (third kit): test 3 + the encoder side (the open gate without the screen step), then one read-only dump on MOVIE | **Yes: memory only** |
+| `test5_real_rows.cmd` | **Test 5** (fourth kit): raw write buffer + the sensor step H5 (first scaler 4336 × 2560), then one read-only dump on MOVIE. Not yet run on an FX2 | **Yes: memory only** |
+| `test6_real_rows_output_size.cmd` | **Test 6** (fourth kit): test 5 + the output size (3840 × 2560), then one read-only dump on MOVIE. Not yet run on an FX2 | **Yes: memory only** |
+| `open_gate_3840x2560_test.cmd` | **The 3840 × 2560 test** (fourth kit): raw write buffer, sensor step H5, output size, encoder (with the MP4 headers), rear screen, then one read-only dump on MOVIE. Not yet run on an FX2 | **Yes: memory only** |
+| `test7_frontend_hold.cmd` | **Test 7, the fallback** (fourth kit): raw write buffer, sensor step L5, one code word that keeps the first-scaler size (F16), output size, encoder. Only if test 5 gives no picture. Not yet run on an FX2 | **Yes: memory only** |
 
 Nothing in this kit writes to the camera's firmware or to its settings.
 
@@ -66,7 +76,7 @@ The macOS kit is the A7 IV kit's macOS port, carried over unchanged apart from t
 
 1. Python 3.9 or later: the one macOS offers with the Xcode Command Line Tools (run `xcode-select --install` in Terminal) works, or install it from python.org.
 2. Double-click `macos/setup.command`. It sets up Python and the USB library the scripts use. No Homebrew and no driver are needed.
-3. Each Windows launcher has a macOS twin with the same name: `macos/check_readonly.command`, `dump_info.command`, `open_gate_apply.command`, `open_gate_apply_no_screen.command`, `open_gate_apply_no_meta.command`, `open_gate_putback.command`, `screen_putback.command`, `test1_fullheight_band.command`, `test2_squeeze_only.command`, `test3_output_size.command`, `test4_output_size_encoder.command`, `open_gate_squeezed.command`. Everything below that says `.cmd` works the same with the `.command` file. (The first FX2 tester ran the macOS launchers: they work.)
+3. Each Windows launcher has a macOS twin with the same name: `macos/check_readonly.command`, `dump_info.command`, `open_gate_apply.command`, `open_gate_apply_no_screen.command`, `open_gate_apply_no_meta.command`, `open_gate_putback.command`, `screen_putback.command`, `test1_fullheight_band.command`, `test2_squeeze_only.command`, `test3_output_size.command`, `test4_output_size_encoder.command`, `open_gate_squeezed.command`, `test5_real_rows.command`, `test6_real_rows_output_size.command`, `open_gate_3840x2560_test.command`, `test7_frontend_hold.command`. Everything below that says `.cmd` works the same with the `.command` file. (The first FX2 tester ran the macOS launchers: they work.)
 
 Each live run asks for your Mac password: macOS keeps its own driver on the camera's USB connection, and only an administrator can hand the camera over to the script. The script unmounts the camera's memory card first; it does not erase anything on it. The results go to the same `windows/camera_private` folder.
 
@@ -84,7 +94,7 @@ If macOS refuses to open a .command file ("unidentified developer" or "could not
 6. **Stop waiting** ends a wait for the camera. It never interrupts a step that is talking to the camera.
 7. Afterwards, **Export logs** writes a zip to `Download/FX2-OpenGate/` on the phone: send that zip back.
 
-**Test 1: band**, **Test 2: squeeze**, **Test 3: + output size** and **Test 4: + encoder** run the diagnostic tests (app 0.3); like the apply, they start only after a check on this phone said READY.
+**Test 1: band**, **Test 2: squeeze**, **Test 3: + output size** and **Test 4: + encoder** run the diagnostic tests; like the apply, they start only after a check on this phone said READY. App 0.4 adds **Squeezed open gate (works)**, **Test 5: real rows**, **Test 6: + output size**, **3840x2560 test** and **Test 7: fallback** (the fourth kit).
 
 **Self-test** and **Dry run** need no camera and send nothing.
 
@@ -122,6 +132,23 @@ The first test showed that the whole kit applies but the FX2 cannot run the resu
 8. Battery out for 10 seconds before the next test.
 
 **Please send** the zipped `windows/camera_private` folder and, for each test, what the screen did. If a test recorded, add the clip or its properties.
+
+## The fourth kit: the path to a true 3840 × 2560 file
+
+Run these in order, each from a cold boot. Stop at the first one that restarts the camera and send the folders: the dump after the restart holds the crash record.
+
+| Test | Launcher | What it applies | Expected | If the camera restarts |
+|---|---|---|---|---|
+| 5 | `test5_real_rows.cmd` | raw write buffer + sensor step H5: the first scaler gives 4336 × 2560 instead of 4336 × 2438; the output size stays stock | what test 2 gives: a steady picture, squeezed 3840 × 2160 clips | the FX2 does not take the taller first-scaler picture; run test 7 |
+| 6 | `test6_real_rows_output_size.cmd` | test 5 + the output size 3840 × 2560 | a steady picture; a recording may stop by itself after about a second, because the encoder is still set for 2,160 rows (the A7 IV did this) | our reading of the crash is incomplete; the dump shows the sizes the camera worked with |
+| 3840 × 2560 | `open_gate_3840x2560_test.cmd` | test 6 + the encoder side (with the MP4 headers) + the rear screen | **clips of 3840 × 2560** holding the whole 3:2 sensor area; the 3:2 rear screen filled | the encoder side is the problem (it has never run on an FX2) |
+| 7 | `test7_frontend_hold.cmd` | raw write buffer, sensor step L5, the code word F16, output size, encoder side | clips of 3840 × 2560 (2,438 rows enlarged to 2,560, as on the A7 IV); the rear screen shows the picture squeezed | both routes fail; send the folders |
+
+**Settings for these tests:** File Format XAVC HS 4K (or XAVC S 4K) at 23.98p, **SteadyShot Off**, APS-C/Super 35 off, S&Q off, Proxy off, De-Squeeze Display off. SteadyShot matters here: with Active, the FX2 asks its first scaler for more rows still.
+
+Run each as in "How to run each test" above (cold boot on STILL, `check_readonly`, the launcher, MOVIE when it asks, replug). The 3840 × 2560 test has five steps with a replug between them.
+
+**Please send** the zipped `windows/camera_private` folder and, for each test, what the screen did. For a clip: its size as MediaInfo shows it, and whether a recording stopped by itself. In-camera playback of a 3840 × 2560 clip has not been tried on an FX2: if a clip says "Unable to display", do not try again.
 
 ## The write steps
 

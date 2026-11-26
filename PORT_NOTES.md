@@ -67,13 +67,73 @@ The kept kprint record is identical each time:
 - **Type 2, FX2 only:** id 0x69c below it (no row in the coprocessor's DmmCfg), else 0x2d9 (13,271,040) with the log line "FW: error! rc_out[%d] image data size excerrd mem size".
 - **Otherwise** (records holding 0x295 / 0x43f / 0x2d9): 13,271,041 bytes or more gives 0x43f (no row on the FX2, as on the A7 IV; the FX3 and FX6 have one, 53 MB), more than 3,317,760 gives 0x2d9, else 0x295.
 - **At 3840 × 2560** a record of format code 2 needs 12,288,000 bytes and fits; one of code 3 needs 14,745,600 bytes, which goes to 0x43f or overflows 0x2d9 / 0x4c4.
-- **Where the records live.** The records are copied from a template, the saved copy of the output records: A7 IV 0x11cf838 (whose format code 2 its level 15 read on the camera, F686), FX2 **0x15cd7e0** (build/port_addr.py, 6 of 6 references; 0xbc75de returns it to the chooser). Per record: stride 0x2c from +4; w, h at +4/+6; format code at +0x20; type at +0x28.
+- **Where the records live.** The records are copied from a template, the saved copy of the output records: A7 IV 0x11cf838 (whose format code 2 its level 15 read on the camera, F686), FX2 0x15cd7e0 by build/port_addr.py (6 of 6 references). **That address was wrong** (corrected 2026-11-26, fourth kit): the getter 0xbc75de returns **0x15cdef8**. The third kit's decoder therefore showed zeros; the pages it saved hold the records. Per record: stride 0x2c from +4; w, h at +4/+6; format code at +0x20; type at +0x28.
 
 **The third kit** (`fx2read_v3`: check 696c9be6, dump 6a234dde; no write library changed; APK 0.3):
 - **The dump** also reads pages 0x15cd000–0x15ce000, and the decoder prints each output record's size, format code, type and picture bytes, and its bytes at 3840 × 2560.
 - **Test 3** = L13 + L5 + L16; **test 4** = L13 + L5 + L16 + L19, each followed by the dump on MOVIE.
 - **Order asked of the tester:** test 2 again (the output records in a state that does not crash), then tests 3 and 4.
 - **Checks:** emu_fx2 23 cases (its model now holds output records), every selftest and dry run.
+
+## Test 3 crashes, why, and the fourth kit (2026-11-26)
+
+**On the camera** (issue #1, third comment; fx2read_v3, macOS, a cold boot before each run):
+
+| Steps | On MOVIE |
+|---|---|
+| L13 + L5 (test 2) | runs, records |
+| L13 + L5 + L16 (test 3) | restart, forced exception pc 0x507dae |
+| L13 + L5 + L16 + L19 or N19, 4:2:2 and 4:2:0 | restart |
+| L13 + L5 + S16 | runs, the 3:2 rear screen filled, records (pull request 3: `open_gate_squeezed`) |
+
+So L16 is the first failing step. On the A7 IV the same word never crashed (F688: the camera stayed up and a recording stopped after a second).
+
+**Read from the tester's v3 dump pages** (the records at their real address 0x15cdef8, in the working state and after the restart):
+
+- The four output records are 3840 × 2160, 1920 × 1080, 1920 × 1080, 3840 × 2160, each with **format code 2 and type 0**: the A7 IV's values.
+- So a 3840 × 2560 picture is 12,288,000 bytes and gets id 0x2d9 (13,271,040). **The output buffer is not the cause**; the type-2 case does not apply.
+- The saved resize view at 0x15cd520 (what 0x51fbc0 filled last) has byte +5 = 1.
+
+**The cause: an FX2-only step of the resize set-up** (0x51fbc0, `SyncRCCalc.cpp`; the A7 IV's is 0x4455a4).
+
+- Both read the first scaler's picture size from the mode's two records (FX2 0x7ccd72 → 0x7cccc2: right +0x190 + right +0x1a4 − left +0x1a0, right +0x1a6) into view +0x3c/+0x3e, and the output size from the movie size table into +0x40/+0x42.
+- The FX2 then, when view byte +5 is set (0x51fef8: `ldrb r0, [r4, #5]`; `cbz r0, 0x51ff22`), calls **0xbd3a32**. It stores `max(record size, output size × 0x10000 / (0x10000 − margin))` back to +0x3c/+0x3e, limited to the crop at +0x38/+0x3a. The margin comes from 0xbd6f34 (u16 words at 0x190f46e..0x190f47c, 0 unless its mode arguments say otherwise; switch 0x190fcd0).
+- Byte +5 is set at 0x51ff52..0x51ff64 when request word +0x1c is not 0, +0x20 is 0, +0x88 is not 1 and +0x6c is 0.
+- The chooser 0x51cb38 and 0x51ce14 copy view +0x3c/+0x3e to the context (+0x54c/+0x54e) as the second scaler's input size.
+- **Stock:** max(4336 × 2438, 3840 × 2160) = 4336 × 2438. **With L16:** max(4336 × 2438, 3840 × 2560) = **4336 × 2560**, while L5's records make the first scaler deliver 4336 × 2438.
+- Our reading of what follows: the second scaler is handed 2,560 rows that never arrive, its stage is still busy after 11 frames, and the firmware forces the exception. The size mismatch is shown; what the hardware does with it is inferred.
+- A scan of every extracted image for this function's arithmetic finds it only in the **FX2 (0xbd3a62) and the A1 II (0xbceefc)**. The A7 IV, A7C II, A7S III, FX3, FX30, FX6 and ZV-E1 do not have it.
+
+**Emulated** (`tools/modding/fx2/emu_rcinput_fx2.py`: 0x51fbc0 run alone on the FX2's image; 10 checks):
+
+| State | First scaler in the view | By the records | Output |
+|---|---|---|---|
+| stock | 4336 × 2438 | 4336 × 2438 | 3840 × 2160 |
+| L5 (`ogsq_fx2_v1`) | 4336 × 2438 | 4336 × 2438 | 3840 × 2160 |
+| L5 + L16 (the crash state) | **4336 × 2560** | **4336 × 2438** | 3840 × 2560 |
+| H5 (`ogh2560_fx2_v1`) + L16 | 4336 × 2560 | 4336 × 2560 | 3840 × 2560 |
+| L5 + L16 + F16 (`fehold_fx2_v1`) | 4336 × 2438 | 4336 × 2438 | 3840 × 2560 |
+
+The emulated view equals the view the camera saved, bytes 1 to 0x53, in the stock state (dump 045730) and in the working L13 + L5 + S16 state (dump 051533).
+
+**The fourth kit** (`fx2read_v4`; APK 0.4; nothing of it has run on an FX2):
+
+- **H5 / H6 = `ogh2560_fx2_v1`**: the A7 IV's `ogh2560_v1` (F712, F713: it works on the A7 IV, first scaler 4336 × 2560, the second scaler taking every row), ported by `build_og_fx2.py` like `ogsq_fx2_v1`. It has L5's 11 sensor cells and stored record; only the two records differ (162 bytes). It takes L5's place.
+- **F16 / F17 = `fehold_fx2_v1`**, the fallback: one code word, 0x51fef8 `607990b1` → `607912e0` (0x51fefa `cbz r0, 0x51ff22` → `b 0x51ff22`), with the 16 code bytes before and after as guards. The override is skipped, and the second scaler enlarges 2,438 rows to 2,560 as on the A7 IV. It goes with L5, not with H5.
+- **Targets:** test5 = L13 + H5; test6 = L13 + H5 + L16; og2560 = L13 + H5 + L16 + L19 + S16 (`open_gate_3840x2560_test`); test7 = L13 + L5 + F16 + L16 + L19. Put back without a cold boot: `fx2_apply.py putback-2560` / `putback-hold`.
+- **The dump** reads one more page (0x190f000: the margin words) and decodes the saved resize view, the first-scaler size the records in place give, whether the two agree, the output records at 0x15cdef8, and the state of the fallback's code word. A site holding `ogh2560_fx2_v1`'s bytes is reported TEST2 (compared by SHA-256, so that the library stays within one upload packet).
+- **Checks:** emu_rcinput_fx2 10; emu_fx2 22 cases + 3 foreign; emu_fx2_write 72; every selftest and dry run, also from the published tree. Libraries L13 to S17 rebuilt to their earlier pins.
+
+| Library | SHA-256 (fourth kit) |
+|---|---|
+| check | `97516ead` |
+| dump | `f4cb345a` |
+| H5 | `47be321c` |
+| H6 | `e459d65c` |
+| F16 | `73a87e6d` |
+| F17 | `6cc77afd` |
+
+**Open:** the margin with SteadyShot Active (the tests ask for SteadyShot Off); whether the FX2 takes a first-scaler picture above 2,450 rows (the A7 IV does); the encoder step L19 on an FX2 (every earlier run with it had L16's crash); PAL (mode 0x880) has no H5 design yet.
 
 ## What the FX2 is
 
@@ -260,7 +320,7 @@ Full hashes are in `fx2_run.py`. A result belongs to this kit only if its header
   - If it does not act the same way, the file shows a 16:9 cut of the full-height picture (no crash expected).
   - The closing dump searches the resize pages for the sizes involved.
 - **The resize result block's address on the FX2.** Its neighbours moved by different amounts, so the dump decoder searches the resize pages (0x190c000..) for known sizes instead of reading one block.
-- **The 4K format code** (2 on the A7 IV; at code 3 the output buffer would be too small).
+- **The 4K format code:** read, 2 (the tester's dump pages, 2026-11-26).
 - **The encoder request's word +0x88.** The FX2's descriptor matcher has an extra branch: with 2 or 5 it skips these 4K descriptors, so even stock would fail; the emulation uses 3, the A7 IV's path. The value a real recording sends is not traced.
 - **The power switch:** whether it removes the patch.
 - **Exposure, autofocus, HDMI, long recordings.**

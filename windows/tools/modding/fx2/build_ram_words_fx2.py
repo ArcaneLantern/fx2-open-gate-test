@@ -112,5 +112,53 @@ def main():
           f"reader case 3 at {tgt:#x} loads {base + off:#x} (A7C II {base_c + off_c:#x})")
 
 
+def fehold():
+    """fehold_fx2_v1 (fourth kit, 2026-11-26): one code word of the resize set-up 0x51fbc0 (SyncRCCalc), so that the first-scaler size it
+    hands the second scaler stays the one the mode's records give.
+
+    Why. After reading that size from the records (0x7ccd72 -> view +0x3c/+0x3e, 4336 x 2438 with ogsq_fx2_v1), the FX2 calls 0xbd3a32
+    when view byte +5 is set, and stores max(record size, output size / (1 - margin)) back. With the output size 3840 x 2560 (L16) that is
+    4336 x 2560, while the records make the first scaler give 2,438 rows: L13 + L5 + L16 ends in the forced 'S-Ele Refresh ng' exception
+    on MOVIE (tester, 2026-11-26). The A7 IV has no such call (its 0x4455a4), and there the second scaler enlarges 2,438 rows to 2,560.
+    The site: 0x51fefa `cbz r0, 0x51ff22` (taken when byte +5 is 0) becomes `b 0x51ff22`, so the call is always skipped.
+    This is the FALLBACK. The main path is ogh2560_fx2_v1 (records that give 4336 x 2560), which needs no code word."""
+    name = "fehold_fx2_v1"
+    md = capstone.Cs(capstone.CS_ARCH_ARM, capstone.CS_MODE_THUMB)
+    ins = list(md.disasm(IMG[0x51FEF8 - B:0x51FF24 - B], 0x51FEF8))
+    text = [(i.address, i.mnemonic, i.op_str) for i in ins]
+    assert text[0] == (0x51FEF8, "ldrb", "r0, [r4, #5]") and text[1] == (0x51FEFA, "cbz", "r0, #0x51ff22"), text[:2]
+    call = next(i for i in ins if i.mnemonic == "bl")
+    assert call.address == 0x51FF16 and call.op_str == "#0xbd3a32", (hex(call.address), call.op_str)
+    # between the branch and its target: only the call's arguments, the call and the two stores of its result
+    assert [(i.mnemonic, i.op_str) for i in ins if i.address in (0x51FF1C, 0x51FF20)] == [("strh", "r0, [r4, #0x3c]"), ("strh", "r0, [r4, #0x3e]")]
+    assert ins[-1].address == 0x51FF22 and (ins[-1].mnemonic, ins[-1].op_str) == ("ldr", "r0, [r5, #0x20]")
+    old = IMG[0x51FEF8 - B:0x51FEFC - B]
+    new = old[:2] + struct.pack("<H", 0xE000 | ((0x51FF22 - (0x51FEFA + 4)) // 2))
+    assert old.hex() == "607990b1" and new.hex() == "607912e0"
+    chk = list(md.disasm(new, 0x51FEF8))
+    assert [(i.mnemonic, i.op_str) for i in chk] == [("ldrb", "r0, [r4, #5]"), ("b", "#0x51ff22")], chk
+    sites = [{"ram_address": hex(0x51FEF8), "old": old.hex(), "new": new.hex(),
+              "note": "0x51fef8 ldrb r0, [r4, #5] (kept); 0x51fefa cbz r0, 0x51ff22 -> b 0x51ff22: the call of 0xbd3a32 and the two stores of "
+                      "its result (view +0x3c, +0x3e) are skipped"}]
+    guards = [{"ram_address": hex(0x51FEE8), "bytes": IMG[0x51FEE8 - B:0x51FEF8 - B].hex(), "note": "the 16 code bytes before the site (the call of 0x7ccd72)"},
+              {"ram_address": hex(0x51FEFC), "bytes": IMG[0x51FEFC - B:0x51FF0C - B].hex(), "note": "the 16 code bytes after the site (the call's arguments)"}]
+    res = {"design": name, "build": BUILD, "camera": "ILME-FX2 (FX2), firmware 1.01",
+           "title": "Resize set-up 0x51fbc0: keep the first-scaler size the records give (skip the FX2's 0xbd3a32 override) (FX2 1.01)",
+           "kind": "ram_words", "artifact": "cpapp-b.bin, the loaded image in coprocessor RAM: a CODE word", "emulated_image_sha256": SHA,
+           "generated_by": "build/build_ram_words_fx2.py",
+           "status": "read from the FX2's code and emulated (build/emu_rcinput_fx2.py); never written on an FX2. A fallback: the main path is ogh2560_fx2_v1",
+           "summary": {"goes_with": ["dmmwb4688_fx2_v1", "ogsq_fx2_v1", "outsz2560_fx2_v1"], "not_with": ["ogh2560_fx2_v1 (not needed there)"]},
+           "sites": sites, "guards": guards,
+           "precondition": "write it with the switch on STILL, before the first MOVIE entry",
+           "restore": "write the old word back, or cold boot",
+           "not_shown": ["anything on an FX2", "that a code word written this way is taken up at once: 0x51fbc0 runs every frame (the screen step's "
+                         "code words did take effect on the FX2)", "the margin words 0x190f46e.. (zero assumed: SteadyShot Off)"]}
+    dd = ROOT / "modding/designs"
+    (dd / f"{name}.json").write_text(json.dumps(res, indent=1) + "\n", encoding="utf8", newline="\n")
+    (dd / f"{name}_pokes_ram.txt").write_text("".join(f"{x['ram_address']} {x['new']}\n" for x in sites), encoding="utf8", newline="\n")
+    print(f"{name}: site {sites[0]['ram_address']} {sites[0]['old']} -> {sites[0]['new']}; guards {[g['ram_address'] for g in guards]}")
+
+
 if __name__ == "__main__":
     main()
+    fehold()

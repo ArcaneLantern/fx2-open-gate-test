@@ -136,13 +136,23 @@ def model(build="fx2_101", applied=False, screen=True, reserve=True, exists=Fals
         ram[0x192FC28] = struct.pack("<I", WS)    # the page of pointers: workspace and unit objects
         ram[0x192F77C] = struct.pack("<I", UNITS)
         ram[WS] = workspace()
-        # v3: a model of the saved output records (0x15cd7e0): four records 3840x2160 / 1920x1080 / 1920x1080 / 3840x2160, format code 2
-        # (the A7 IV camera's values, F686), types 0
+        # v3: a model of the saved output records: four records 3840x2160 / 1920x1080 / 1920x1080 / 3840x2160, format code 2, types 0 (the
+        # A7 IV camera's values, F686, and what the tester's FX2 holds). v4: at 0x15cdef8, where 0xbc75de says they are (v3 had 0x15cd7e0)
         orec = bytearray(4 + 4 * 0x2C)
         for k, (w, h) in enumerate(((3840, 2160), (1920, 1080), (1920, 1080), (3840, 2160))):
             struct.pack_into("<HH", orec, 4 + 0x2C * k + 4, w, h)
             struct.pack_into("<I", orec, 4 + 0x2C * k + 0x20, 2)
-        ram[0x15CD7E0] = bytes(orec)
+        ram[0x15CDEF8] = bytes(orec)
+        # v4: the saved resize view (0x15cd520) as the tester's FX2 held it in the stock state (dump 045730, byte 0 clear), and the margin
+        # words of 0xbd6f34 (the model has none set)
+        view = bytearray(0x54)
+        view[4], view[5] = 1, 1
+        for off, (w, h) in ((0x14, (7040, 3958)), (0x1C, (7032, 3958)), (0x20, (12, 8)), (0x24, (7008, 3942)),
+                            (0x28, (7040, 3958)), (0x30, (7032, 3958)), (0x34, (12, 8)), (0x38, (7008, 3942)), (0x3C, (4336, 2438)), (0x40, (3840, 2160))):
+            struct.pack_into("<HH", view, off, w, h)
+        struct.pack_into("<II", view, 0x44, 0x8C0, 1)
+        ram[0x15CD520] = bytes(view)
+        ram[0x190F46E] = bytes(16)
         if test:                                  # a test design at the sensor sites and in the stored record
             td = design(test)
             ram[int(td["stored_record"]["address"], 16)] = bytes.fromhex(td["stored_record"]["design"])
@@ -189,13 +199,15 @@ def run(lib, **kw):
 def main():
     ok = True
     screen_n = sum(1 for s in FACTS["cp_sites"] if s["name"].startswith("screen"))
-    hard = [s for s in FACTS["cp_sites"] if not s["name"].startswith(("outsize_guard",))]
+    # sites the applied state changes: not the output-size guards, and not the fallback's code word (v4: its own optional step, F16)
+    hard = [s for s in FACTS["cp_sites"] if not s["name"].startswith(("outsize_guard", "fehold"))]
     for which in ("check", "dump"):
         lib = (HERE / f"libJit_fx2_{which}.so").read_bytes()
         for case, kw, want in (("stock", {}, ("VERDICT READY", "STOCK")), ("applied", {"applied": True}, ("VERDICT READY", "TARGET")),
                                ("no-screen", {"applied": True, "screen": False}, ("VERDICT READY", "TARGET")),
                                ("no-meta", {"applied": True, "enc": "ogfile2560_hs_s_fx2_v1"}, ("VERDICT READY", "TARGET")),
                                ("test1", {"test": "fhband_fx2_v1"}, ("VERDICT READY", "  TEST")),
+                               ("test5", {"test": "ogh2560_fx2_v1"}, ("VERDICT READY", "  TEST2")),
                                ("a7c2", {"build": "a7c2_201"}, ("VERDICT NOT READY", "DIFFERS from the 1.01 update")),
                                ("a7iv", {"build": "a7iv_602"}, ("VERDICT NOT READY", "DIFFERS from the 1.01 update")),
                                ("fx3", {"build": "fx3_702"}, ("VERDICT NOT READY", "DIFFERS from the 1.01 update")),
@@ -227,7 +239,7 @@ def main():
                     lm = [ln for ln in text.split("\n") if ln.startswith("lm ")]
                     if sum(ln.endswith("TARGET") for ln in lm) != 4 or sum(ln.endswith("STOCK") for ln in lm) != 2:
                         problems.append("no-meta: libmpr lines %s" % lm)
-                if case in ("stock", "applied", "test1"):  # the raw write buffer's four words are hard sites
+                if case in ("stock", "applied", "test1", "test5"):  # the raw write buffer's four words are hard sites
                     rb = [ln for ln in text.split("\n") if ln.startswith("site rawbuf_")]
                     if len(rb) != 4 or not all(ln.endswith("  " + ("STOCK" if case == "stock" else "TARGET")) for ln in rb):
                         problems.append("raw write buffer words: %s" % rb)
@@ -236,6 +248,15 @@ def main():
                     tg = [ln for ln in text.split("\n") if ln.startswith("site S") and ln.endswith("  TARGET")]
                     if len(tl) != 3 or len(tg) != 11:      # the records and the stored record differ from the squeeze design; the 11 cells are the same
                         problems.append("test1: %d sites TEST (want 3), %d cells TARGET (want 11)" % (len(tl), len(tg)))
+                if case == "test5":                        # v4: ogh2560_fx2_v1 = the squeeze design with other records: 2 sites TEST2, the rest TARGET
+                    t2 = [ln.split(" ")[1] for ln in text.split("\n") if ln.startswith("site ") and ln.endswith("  TEST2")]
+                    tg = [ln for ln in text.split("\n") if (ln.startswith("site S") or ln.startswith("site stored_record")) and ln.endswith("  TARGET")]
+                    if t2 != ["record_left", "record_right"] or len(tg) != 12 or "  TEST\n" in text:
+                        problems.append("test5: TEST2 at %s (want the two records), %d sites TARGET (want 12)" % (t2, len(tg)))
+                if case == "stock":                        # v4: the fallback's code word is reported, stock
+                    fl_ = [ln for ln in text.split("\n") if ln.startswith("site fehold ")]
+                    if len(fl_) != 1 or not fl_[0].endswith("  STOCK"):
+                        problems.append("fehold: %s" % fl_)
                 if which == "dump" and case == "stock" and text.count("cppage ") != sum(k for _, _, k in FACTS["dump_ranges"]):
                     problems.append("dump pages: %d" % text.count("cppage "))
             n_tr = sum(1 for c in r.lib_calls if c[0] == "transfer")

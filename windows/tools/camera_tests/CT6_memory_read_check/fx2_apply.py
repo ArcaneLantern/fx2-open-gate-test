@@ -3,7 +3,10 @@
   python fx2_apply.py apply    [--no-screen] [--no-meta] [--dry-run] [--no-movie-session]
   python fx2_apply.py putback  [--no-screen] [--dry-run]
   python fx2_apply.py screen | screen-putback  [--dry-run]
-  python fx2_apply.py test1 | test2  [--dry-run]       (second kit, 2026-11-26: the diagnostic ladder)
+  python fx2_apply.py test1 | test2 | test3 | test4  [--dry-run]       (second and third kit, 2026-11-26: the diagnostic ladder)
+  python fx2_apply.py squeeze  [--dry-run]             (the squeezed open gate: ran on an FX2, 2026-11-26)
+  python fx2_apply.py test5 | test6 | og2560 | test7  [--dry-run]      (fourth kit, 2026-11-26: the path to a true 3840x2560 file)
+  python fx2_apply.py putback-2560 | putback-hold  [--dry-run]         (put back og2560 / test7 without a cold boot)
 
 The FX2 counterpart of fx3_apply.py (the FX3 kit, which records open gate on two FX3s). The FX2 is the A7 IV's sensor (IMX710 class)
 on the A7C II's platform, so its open-gate steps are the A7 IV kit's (its default state since 2026-11-18, true 3840x2560 files of the
@@ -29,6 +32,20 @@ checked against the FX2's own code in emulation. NOTHING OF THIS KIT HAS RUN ON 
            whole 7008x4672 window, L13's 33,003,520-byte write buffer in use): L13 + L5 + L16, the output size. Then the dump on MOVIE (v3 reads the
            saved output records: size, format code, type) or, after a restart, the crash record.
   test4    L13 + L5 + L16 + L19: test 3 and the encoder side (the full open gate without the screen step).
+  squeeze  L13 + L5 + S16 (a tester's pull request, 2026-11-26; ran on an FX2): test 2 plus the screen step. The file is 3840x2160 holding the
+           whole 3:2 sensor area squeezed 27/32 vertically; the 3:2 rear screen shows it at its true shape. No output-size or encoder step.
+
+  FOURTH KIT (2026-11-26). Test 3 crashed on the FX2: L16 is the first failing step (on the A7 IV it never crashed). Read from the FX2's
+  code and emulated (build/emu_rcinput_fx2.py): its resize set-up 0x51fbc0 raises the first-scaler size it hands the second scaler to at
+  least the output size (0xbd3a32; only the FX2 and the A1 II have that code). With L16 that is 4336x2560, while L5's records make the
+  first scaler give 4336x2438. The A7 IV's design for a 4336x2560 first scaler, ogh2560_v1 (F712, F713), is ported as H5 and takes L5's place.
+  test5    L13 + H5: the taller first-scaler picture with the stock output size. Expected: what test 2 gives (squeezed 3840x2160 clips).
+  test6    L13 + H5 + L16: plus the output size. Expected: a steady picture; a recording may stop after about a second, because the
+           encoder is still set for 2,160 rows (the A7 IV did that at this stage, F688).
+  og2560   L13 + H5 + L16 + L19 + S16: THE 3840x2560 PATH. Expected: clips of 3840x2560 with 2,560 real rows, the 3:2 rear screen filled.
+  test7    L13 + L5 + F16 + L16 + L19, THE FALLBACK, for the case that test5 does not run: F16 is one code word that makes the resize
+           set-up keep the records' first-scaler size, so the second scaler enlarges 2,438 rows to 2,560 as on the A7 IV. No screen step.
+  For all four: SteadyShot Off (with Active the FX2 asks the first scaler for more rows still), APS-C/Super 35 Off, S&Q and Proxy off.
 
 There is no preview-key routine in this kit: the FX2's own De-Squeeze Display (Off, 1.3x, 2.0x on 1.01) is kept, and S16 sets its ratios
 for the 3:2 picture.
@@ -60,10 +77,20 @@ import fx2_run  # noqa: E402
 FIRMWARE = fx2_run.FIRMWARE
 STEPS = {"apply": ("L13", "L5", "L16", "L19"), "putback": ("L20", "L17", "L6", "L14"), "screen": ("S16",), "screen-putback": ("S17",),
          "test1": ("L13", "B5"), "test2": ("L13", "L5"), "test3": ("L13", "L5", "L16"), "test4": ("L13", "L5", "L16", "L19"),
-         # squeeze (2026-11-26, ran on an FX2): test 2 plus the screen step. The file is 3840x2160 holding the whole 3:2 sensor area squeezed
-         # 27/32 vertically, and the 3:2 rear screen shows it at its true shape. No output-size or encoder step (test 3 crashes on MOVIE entry).
-         "squeeze": ("L13", "L5", "S16")}
-TESTS = ("test1", "test2", "test3", "test4", "squeeze")
+         # squeeze (2026-11-26, a tester's pull request; ran on an FX2): test 2 plus the screen step. The file is 3840x2160 holding the whole 3:2
+         # sensor area squeezed 27/32 vertically, and the 3:2 rear screen shows it at its true shape. No output-size or encoder step.
+         "squeeze": ("L13", "L5", "S16"),
+         # fourth kit (2026-11-26): the path to a true 3840x2560 file (H5 = ogh2560_fx2_v1 in L5's place), and the fallback (F16)
+         "test5": ("L13", "H5"), "test6": ("L13", "H5", "L16"), "og2560": ("L13", "H5", "L16", "L19", "S16"),
+         "test7": ("L13", "L5", "F16", "L16", "L19"),
+         "putback-2560": ("S17", "L20", "L17", "H6", "L14"), "putback-hold": ("L20", "L17", "F17", "L6", "L14")}
+TESTS = ("test1", "test2", "test3", "test4", "squeeze", "test5", "test6", "og2560", "test7")
+FOURTH = {"test5": "the taller first-scaler picture (4336x2560) with the stock output size. Expected: what test 2 gives, a steady picture and squeezed 3840x2160 clips.",
+          "test6": "test 5 plus the output size 3840x2560. Expected: a steady picture; a recording may stop after about a second (the encoder is still set for 2,160 rows).",
+          "og2560": "the path to a true 3840x2560 file: raw write buffer, the sensor side with a 4336x2560 first scaler, output size, encoder side, rear screen. "
+                    "Expected: clips of 3840x2560.",
+          "test7": "the fallback: the squeeze design with one code word that keeps the first-scaler size, then output size and encoder side. Expected: clips of 3840x2560 "
+                   "(2,438 rows enlarged, as on the A7 IV). Run it only if test 5 does not give a picture."}
 RUNNER = HERE / "fx2_run.py"
 LISTER = HERE.parent / "CT1_usb_first_contact" / "ct1_stage2_service.py"
 STILL = "STILL (the Still/Movie switch on STILL)"
@@ -95,7 +122,7 @@ def last_check():
         res = man.get("results", {})
         f = (res.get("ct6", {}).get("result") or {}).get("s3")
         if res.get("which") in ("check", "dump") and f:       # a dump makes every check the check makes, and gives the same verdict
-            current = any(v in f.get("header", "") for v in ("fx2read_v1 ", "fx2read_v2 ", "fx2read_v3 ")) and "ILME-FX2 1.01" in f.get("header", "")
+            current = any(v in f.get("header", "") for v in ("fx2read_v1 ", "fx2read_v2 ", "fx2read_v3 ", "fx2read_v4 ")) and "ILME-FX2 1.01" in f.get("header", "")
             return folder.name, current and bool(f.get("ready")) and not f.get("identity_differs")
     return None
 
@@ -243,13 +270,21 @@ def main():
                          % ("does not exist" if chk is None else "(%s) does not say READY" % chk[0]))
     say()
     say("This WRITES into the running camera's memory (not its firmware, not its settings).")
-    if a.what in TESTS:
-        say("This is %s of the diagnostic ladder (second kit). On the first FX2 test the whole apply worked, but MOVIE ended in a forced" % a.what)
+    if a.what in FOURTH:
+        say("This is %s of the fourth kit (%s)." % (a.what, " + ".join(steps)))
+        say("  %s" % FOURTH[a.what])
+        say("  Why: with the output size 3840x2560 the FX2 hands its second scaler a first-scaler size of 4336x2560, and the earlier sensor step (L5)")
+        say("  delivers 4336x2438: that was the crash of L13 + L5 + L16. %s" % ("H5 delivers 4336x2560." if "H5" in steps else "F16 keeps the size the records give."))
+        say("  NOT YET RUN ON AN FX2. A restart is possible and harmless (the patch is gone after it). Each step writes nothing unless its bytes are")
+        say("  exactly the stock bytes.")
+        say("  Camera settings for this test: SteadyShot Off, APS-C/Super 35 Off, S&Q off, Proxy off, File Format XAVC HS 4K, 23.98p.")
+    elif a.what in TESTS:
+        say("This is %s of the diagnostic ladder. On the first FX2 test the whole apply worked, but MOVIE ended in a forced" % a.what)
         say("  exception and a restart. This test applies only %s, so that the result says which part the FX2 does not take." % " + ".join(steps))
         say("  A restart is possible and harmless (the patch is gone after it). Each step writes nothing unless its bytes are exactly the stock bytes.")
     elif applying:
-        say("On the first FX2 test (2026-11-25) every step applied, but entering MOVIE ended in a forced exception and a restart to stock.")
-        say("  If you have not run test1 and test2 yet, please run those first (test1_fullheight_band, test2_squeeze_only).")
+        say("On the FX2 this state CRASHES on MOVIE entry (2026-11-25 and 2026-11-26: a forced exception and a restart to stock). The first failing")
+        say("  step is L16 after L5. Use open_gate_squeezed (works) or the fourth kit's open_gate_3840x2560_test instead.")
         say("  Each step writes nothing unless its bytes are exactly the FX2 1.01 stock bytes.")
     else:
         say("It has to follow an apply of this kit.")
@@ -296,7 +331,7 @@ def main():
             say("  Sony's XML (in the file and the sidecar) still says 3840x2160, 16:9.")
         say("In-camera playback: the FX2 opens playback with the A7 IV's decoder channel, which plays these clips on an A7 IV. Not tried on an FX2:")
         say("  if a clip says 'Unable to display', do NOT try again (on an FX3 a retry froze the camera); check the clips on a computer and report it.")
-    if with_screen and applying:
+    if "S16" in steps:
         say("The screen step: on MOVIE the 3:2 rear screen should now be filled with the whole picture at its true shape. A circle should look round.")
         say("  The viewfinder (a 4:3 panel) keeps showing the picture squeezed, as on the A7 IV.")
         say("  De-Squeeze Display (in the menu's Display Option) now de-squeezes the 3:2 picture: 1.3x shows 1.95:1, 2.0x 3:1 (the whole frame;")
@@ -311,6 +346,9 @@ def main():
         say()
         say("Please send the newest folders in camera_private, and what the screen did on MOVIE: a picture (which shape?), purple flashing,")
         say("  a restart? If it recorded: the clip's properties (size, frame rate), or the clip. To return to stock: battery out for 10 seconds.")
+        if a.what in ("og2560", "test7"):
+            say("  For a clip of this test: the size MediaInfo shows (3840x2560 expected), whether it plays on a computer, and whether a recording")
+            say("  stops by itself. In-camera playback is not tried on an FX2: if a clip says 'Unable to display', do NOT try again.")
         say("  Before the next test: battery out for 10 seconds, switch on with the switch on STILL.")
         return
     if closing:

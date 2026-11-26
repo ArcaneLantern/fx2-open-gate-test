@@ -1,0 +1,48 @@
+{
+ "design": "fehold_fx2_v1",
+ "build": "fx2_101",
+ "camera": "ILME-FX2 (FX2), firmware 1.01",
+ "title": "Resize set-up 0x51fbc0: keep the first-scaler size the records give (skip the FX2's 0xbd3a32 override) (FX2 1.01)",
+ "kind": "ram_words",
+ "artifact": "cpapp-b.bin, the loaded image in coprocessor RAM: a CODE word",
+ "emulated_image_sha256": "eba723db657117a36d9593dacf640840aca893c0d6ee5d728de9d1996b8c5e29",
+ "generated_by": "build/build_ram_words_fx2.py",
+ "status": "read from the FX2's code and emulated (build/emu_rcinput_fx2.py); never written on an FX2. A fallback: the main path is ogh2560_fx2_v1",
+ "summary": {
+  "goes_with": [
+   "dmmwb4688_fx2_v1",
+   "ogsq_fx2_v1",
+   "outsz2560_fx2_v1"
+  ],
+  "not_with": [
+   "ogh2560_fx2_v1 (not needed there)"
+  ]
+ },
+ "sites": [
+  {
+   "ram_address": "0x51fef8",
+   "old": "607990b1",
+   "new": "607912e0",
+   "note": "0x51fef8 ldrb r0, [r4, #5] (kept); 0x51fefa cbz r0, 0x51ff22 -> b 0x51ff22: the call of 0xbd3a32 and the two stores of its result (view +0x3c, +0x3e) are skipped"
+  }
+ ],
+ "guards": [
+  {
+   "ram_address": "0x51fee8",
+   "bytes": "3c01cde900193146cdf80890acf23dff",
+   "note": "the 16 code bytes before the site (the call of 0x7ccd72)"
+  },
+  {
+   "ram_address": "0x51fefc",
+   "bytes": "b4f84000b4f84210a68fb4f83ec0638f",
+   "note": "the 16 code bytes after the site (the call's arguments)"
+  }
+ ],
+ "precondition": "write it with the switch on STILL, before the first MOVIE entry",
+ "restore": "write the old word back, or cold boot",
+ "not_shown": [
+  "anything on an FX2",
+  "that a code word written this way is taken up at once: 0x51fbc0 runs every frame (the screen step's code words did take effect on the FX2)",
+  "the margin words 0x190f46e.. (zero assumed: SteadyShot Off)"
+ ]
+}

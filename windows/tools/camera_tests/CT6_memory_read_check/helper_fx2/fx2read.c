@@ -2,6 +2,7 @@
  * fx2read: READ-ONLY helper for the FX2 (ILME-FX2) firmware 1.01 port of the open-gate state (made from fx3read.c, 2026-11-25).
  * v2 (2026-11-26, after the first FX2 test): a site may also hold a test design's bytes (`alt`, reported TEST: the diagnostic ladder's
  * fhband_fx2_v1); the dump also copies the memory manager's workspace and the first pages of the crash snapshot area.
+ * v4 (2026-11-26, after test 3 crashed): a second test design per site, compared by SHA-256 and reported TEST2 (ogh2560_fx2_v1).
  *
  * NOT RUN ON A CAMERA. It is loaded the way the A7 IV helper is (readcheck.c): the service file-write command
  * writes /tmp/jiritsu/libJit.so and loads it at once; loading runs the constructor below, once.
@@ -387,14 +388,20 @@ static void cp_part(void)
         puts_("site "); puts_(c->name); puts_(" "); putaddr(c->address); puts_(" len "); putnum(c->length);
         if (c->length > sizeof big || !cp_bytes(c->address, big, c->length)) { puts_("  NOT READ\n"); n_other++; continue; }
         int st = same(big, c->stock, c->length), tg = c->target && same(big, c->target, c->length), al = c->alt && same(big, c->alt, c->length);
+        int al2 = 0;                                                 /* v4: a second test design (ogh2560_fx2_v1), reported TEST2; held as its SHA-256 */
+        if (c->alt2_sha && !st && !tg && !al) {
+            struct sha s; u8 dg[32];
+            sha_init(&s); sha_add(&s, big, c->length); sha_end(&s, dg);
+            al2 = same(dg, c->alt2_sha, 32);
+        }
         if (c->length <= 16) { puts_(" bytes "); puthex(big, c->length); }
         else {
             u32 d = 0;
             for (u32 k = 0; k < c->length; k++) if (big[k] != c->stock[k]) d++;
             puts_(" bytes differing from stock "); putnum(d);
         }
-        puts_(st ? "  STOCK\n" : tg ? "  TARGET\n" : al ? "  TEST\n" : c->soft ? "  OTHER (not counted: filled at run time)\n" : "  OTHER\n");
-        if (!st && !tg && !al) {
+        puts_(st ? "  STOCK\n" : tg ? "  TARGET\n" : al ? "  TEST\n" : al2 ? "  TEST2\n" : c->soft ? "  OTHER (not counted: filled at run time)\n" : "  OTHER\n");
+        if (!st && !tg && !al && !al2) {
             if (!c->soft) n_other++;
             if (c->length > 16) { puts_("other "); puts_(c->name); puts_(" "); puthex(big, c->length); puts_("\n"); }
         }

@@ -34,13 +34,22 @@ for L in 5 6; do
   "${CC[@]}" -DLEVEL=$L '-DSITES_H="expected_sites_fhband_fx2_v1.h"' '-DDESIGN_LABEL="fhband_fx2_v1"' -DIMAGER=0x1750860UL -DCTRL_DRVPARAM=0x6acU -DREC=0x170U \
     readcheck.c "$SEN" -o "$H/libJit_fx2_B$L.so"
 done
+# H5/H6 (fourth kit, 2026-11-26): the same levels 5/6 with ogh2560_fx2_v1, the A7 IV's ogh2560_v1 (ogsq_v3 with records whose first-stage
+# scaler gives 4336x2560). On the FX2 the output size 3840x2560 needs it: the resize set-up raises the first-scaler size it hands on to
+# the output size (modding/FX2_PORT.md, "Why L16 crashed")
+for L in 5 6; do
+  "${CC[@]}" -DLEVEL=$L '-DSITES_H="expected_sites_ogh2560_fx2_v1.h"' '-DDESIGN_LABEL="ogh2560_fx2_v1"' -DIMAGER=0x1750860UL -DCTRL_DRVPARAM=0x6acU -DREC=0x170U \
+    readcheck.c "$SEN" -o "$H/libJit_fx2_H$L.so"
+done
 for L in 16 17; do
   "${CC[@]}" -DLEVEL=$L '-DWORDS_H="expected_words_outsz2560_fx2_v1.h"' readcheck.c "$SEN" -o "$H/libJit_fx2_L$L.so"
   "${CC[@]}" -DLEVEL=$L '-DWORDS_H="expected_words_lcd32dsq_fx2_v1.h"' readcheck.c "$SEN" -o "$H/libJit_fx2_S$L.so"
+  # F16/F17 (fourth kit, the fallback): fehold_fx2_v1, one code word of the resize set-up
+  "${CC[@]}" -DLEVEL=$L '-DWORDS_H="expected_words_fehold_fx2_v1.h"' readcheck.c "$SEN" -o "$H/libJit_fx2_F$L.so"
 done
 for L in 19 20; do
   "${CC[@]}" -DLEVEL=$L '-DMP_H="expected_mp_ogfile2560_hs_s_fx2_v2.h"' -DAVCAM_PHYS=0x401000000UL readcheck.c -o "$H/libJit_fx2_L$L.so"
 done
 "${CC[@]}" -DLEVEL=19 '-DMP_H="expected_mp_ogfile2560_hs_s_fx2_v1.h"' -DAVCAM_PHYS=0x401000000UL readcheck.c -o "$H/libJit_fx2_N19.so"
 cd "$H"
-for N in L13 L14 L5 L6 B5 B6 L16 L17 L19 L20 N19 S16 S17; do echo "$(sha256sum libJit_fx2_$N.so | cut -d' ' -f1) $(stat -c %s libJit_fx2_$N.so) $N"; done
+for N in L13 L14 L5 L6 B5 B6 H5 H6 L16 L17 F16 F17 L19 L20 N19 S16 S17; do echo "$(sha256sum libJit_fx2_$N.so | cut -d' ' -f1) $(stat -c %s libJit_fx2_$N.so) $N"; done

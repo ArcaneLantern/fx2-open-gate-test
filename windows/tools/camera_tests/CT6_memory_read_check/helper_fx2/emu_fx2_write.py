@@ -279,6 +279,49 @@ def main():
         r, t = go(B5, mem, b_allowed, lose=lose)
         ok(not r.bad and "NOT DONE" in t and bstate(mem) == "stock" and changed_only(mem, before, {}), f"B5 with line write {lose} lost: every site put back")
 
+    # ---- H5 / H6 (fourth kit): ogh2560_fx2_v1, the A7 IV's ogh2560_v1: L5's sensor cells and stored record, other records (first scaler 4336x2560)
+    dh = design("ogh2560_fx2_v1")
+    assert dh["mode_index"] == index and dh["stored_record"] == dict(d["stored_record"], evidence=dh["stored_record"]["evidence"])
+    h_allowed = {}
+    for p in dh["patches"]:
+        a = int(p["addr"], 16)
+        for k, (o, n) in enumerate(zip(bytes.fromhex(p["old"]), bytes.fromhex(p["new"]))):
+            if o != n:
+                h_allowed[a + k] = (o, n)
+    for k in range(REC):
+        if st[k] != nw[k]:
+            h_allowed[RECS + index * REC + k] = (st[k], nw[k])
+    differ = sum(1 for a, pr in h_allowed.items() if allowed.get(a) != pr) + sum(1 for a in allowed if a not in h_allowed and allowed[a][0] != allowed[a][1])
+    ok(differ > 0 and all(int(p["addr"], 16) in (0xDF9958, 0xDFA510) for p, q in zip(dh["patches"], d["patches"]) if p["new"] != q["new"]),
+       f"ogh2560_fx2_v1 differs from ogsq_fx2_v1 only inside the two records ({differ} bytes)")
+
+    def hstate(mem):
+        vals = [(mem.read(a, 1)[0], pr) for a, pr in h_allowed.items()]
+        return "stock" if all(v == pr[0] for v, pr in vals) else "new" if all(v == pr[1] for v, pr in vals) else "mixed"
+    H5, H6 = lib("H5"), lib("H6")
+    mem = camera()
+    before = mem.snapshot()
+    r, t = go(H5, mem, h_allowed)
+    ok(not r.bad and "DONE: all 14 sites hold the target bytes (apply)" in t and hstate(mem) == "new" and changed_only(mem, before, h_allowed),
+       f"H5 (ogh2560_fx2_v1) on a stock FX2: 13 sites and the stored record new, nothing else changed ({r.n_writes} line writes)")
+    r, t = go(H5, mem, h_allowed)
+    ok(not r.bad and "NOTHING TO DO" in t and r.n_writes == 0, "H5 again: nothing to do, no write")
+    r, t = go(L5, mem, allowed)
+    ok(not r.bad and r.n_writes == 0 and "nothing is written" in t, "L5 on a camera holding H5's state: refused, nothing written")
+    r, t = go(L6, mem, allowed)
+    ok(not r.bad and r.n_writes == 0 and hstate(mem) == "new", "L6 on a camera holding H5's state: nothing written (H6 is its put back)")
+    r, t = go(H6, mem, h_allowed)
+    ok(not r.bad and "(put back)" in t and "DONE" in t and hstate(mem) == "stock" and changed_only(mem, before, {}), "H6: everything stock again, byte for byte")
+    mem = camera()
+    r, t = go(L5, mem, allowed)
+    r, t = go(H5, mem, h_allowed)
+    ok(not r.bad and r.n_writes == 0 and "nothing is written" in t, "H5 on a camera holding L5's state: refused, nothing written")
+    for lose in (1, 14):
+        mem = camera()
+        before = mem.snapshot()
+        r, t = go(H5, mem, h_allowed, lose=lose)
+        ok(not r.bad and "NOT DONE" in t and hstate(mem) == "stock" and changed_only(mem, before, {}), f"H5 with line write {lose} lost: every site put back")
+
     # ---- L13 / L14: the memory manager
     dd = design("dmmwb4688_fx2_v1")
     E.DESIGN = "dmmwb4688_fx2_v1"
@@ -335,7 +378,7 @@ def main():
         for k, (w, h, mid) in enumerate(srows):
             m.write(t_ + 8 * k, struct.pack("<2HI", w, h, mid))
         return m
-    steps = [("outsz2560_fx2_v1", "L16", "L17")]
+    steps = [("outsz2560_fx2_v1", "L16", "L17"), ("fehold_fx2_v1", "F16", "F17")]     # F16/F17 (fourth kit): one code word, in the loaded image
     if (HERE / "libJit_fx2_S16.so").is_file():
         steps.append(("lcd32dsq_fx2_v1", "S16", "S17"))
     for name, s_apply, s_back in steps:

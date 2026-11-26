@@ -170,5 +170,10 @@ def build(src, mode, name):
 if __name__ == "__main__":
     # fhband_fx2_v1 (2026-11-26, after the first FX2 test crashed on movie entry): the A7 IV's fhband_v1 (F658: full-height read-out, the stock
     # 16:9 band kept, stage height stock), the second kit's test 1. It needs no stored_record_extra.
-    for src, mode, name in (("ogsq_v3", 0x8C0, "ogsq_fx2_v1"), ("ogsq880_v1", 0x880, "ogsq880_fx2_v1"), ("fhband_v1", 0x8C0, "fhband_fx2_v1")):
+    # ogh2560_fx2_v1 (2026-11-26, fourth kit): the A7 IV's ogh2560_v1 (F712, F713: the first-stage scaler gives 4336x2560 instead of 4336x2438).
+    # It differs from ogsq_v3 only in the two records. Why the FX2 needs it: its resize set-up 0x51fbc0 raises the first-scaler size it hands
+    # the second scaler to at least the output size (0xbd3a32, FX2 and A1 II only), so with the 3840x2560 output size the records must give
+    # 2,560 rows too (modding/FX2_PORT.md, "Why L16 crashed").
+    for src, mode, name in (("ogsq_v3", 0x8C0, "ogsq_fx2_v1"), ("ogsq880_v1", 0x880, "ogsq880_fx2_v1"), ("fhband_v1", 0x8C0, "fhband_fx2_v1"),
+                            ("ogh2560_v1", 0x8C0, "ogh2560_fx2_v1")):
         build(src, mode, name)

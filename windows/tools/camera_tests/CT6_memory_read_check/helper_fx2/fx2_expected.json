@@ -1,5 +1,5 @@
 {
- "label": "fx2read_v3",
+ "label": "fx2read_v4",
  "cp_lo": 786432,
  "cp_hi": 162529280,
  "avcam_phys": 17196646400,
@@ -227,6 +227,12 @@
    "soft": 1
   },
   {
+   "name": "fehold",
+   "address": "0x51fef8",
+   "length": 4,
+   "soft": 1
+  },
+  {
    "name": "rawbuf_size0",
    "address": "0x24838c8",
    "length": 4,
@@ -292,7 +298,7 @@
   [
    "resizestate",
    "0x190c000",
-   3
+   4
   ],
   [
    "resizework",
@@ -360,6 +366,9 @@
   "outsz2560_fx2_v1": "d128624006e0df75088a1f9987a16daa183d4fa8ed76df9327f98d8cae0953d5",
   "ogfile2560_hs_s_fx2_v2": "d5bad42782b81dd17bda2552ce639edae909de82aa70f28ecad68a1a73b63406",
   "lcd32dsq_fx2_v1": "4a8831b7e9a2b217d1c49cd45ef5f4c35eb440647d22dd080713ea3a8479b0d2",
-  "dmmwb4688_fx2_v1": "c85548d111b790ef88d412cf126d078fa5ed67bd2bd7c95ea9567f581d355b93"
+  "dmmwb4688_fx2_v1": "c85548d111b790ef88d412cf126d078fa5ed67bd2bd7c95ea9567f581d355b93",
+  "fehold_fx2_v1": "1a38d997736242c7c86963ee8f6879f98192cd4c1843032883113d1e920bacc5",
+  "fhband_fx2_v1": "563737e28d8ab73b716482d907ca8a7eba5b3c4efca46eb726064d46cb78b6f5",
+  "ogh2560_fx2_v1": "3e33ae06d2e02cdaed872ecccb5a53468be06077a822ac6c41aabf9a3966f207"
  }
 }

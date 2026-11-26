@@ -129,7 +129,10 @@ def dmm_header(name="dmmwb4688_fx2_v1"):
 
 # Where a words design may have a site, and where only a guard (FX2 addresses; build/build_ram_words_fx2.py, build/build_lcd_fx2.py)
 SIZE_TABLE = (0x18F60B0, 0x18F60B0 + 0x80)
-WORD_REGIONS = {"outsz2560_fx2_v1": ((SIZE_TABLE,), ())}
+# fehold_fx2_v1 (fourth kit): one CODE word of the resize set-up 0x51fbc0, the branch over the FX2's first-scaler override; its guards are
+# the 16 code bytes before and after (build/build_ram_words_fx2.py fehold(), which decodes them)
+FEHOLD_SITE, FEHOLD_GUARDS = (0x51FEF8, 0x51FEFC), ((0x51FEE8, 0x51FEF8), (0x51FEFC, 0x51FF0C))
+WORD_REGIONS = {"outsz2560_fx2_v1": ((SIZE_TABLE,), ()), "fehold_fx2_v1": ((FEHOLD_SITE,), FEHOLD_GUARDS)}
 LCD_REGIONS = HERE / "lcd_regions_fx2.json"         # written from the screen design's builder (site regions, guard-only regions)
 
 
@@ -232,7 +235,9 @@ if __name__ == "__main__":
     print("dmm header dmmwb4688_fx2_v1", dmm_header())
     print("sites header ogsq_fx2_v1", sites_header())
     print("sites header fhband_fx2_v1 (second kit, test 1)", sites_header("fhband_fx2_v1"))
+    print("sites header ogh2560_fx2_v1 (fourth kit: the first scaler gives 4336x2560)", sites_header("ogh2560_fx2_v1"))
     print("words header outsz2560_fx2_v1", words_header("outsz2560_fx2_v1"))
+    print("words header fehold_fx2_v1 (fourth kit, the fallback)", words_header("fehold_fx2_v1"))
     if (DES / "lcd32dsq_fx2_v1.json").exists():
         print("words header lcd32dsq_fx2_v1", words_header("lcd32dsq_fx2_v1"))
     for n in ("ogfile2560_hs_s_fx2_v2", "ogfile2560_hs_s_fx2_v1"):

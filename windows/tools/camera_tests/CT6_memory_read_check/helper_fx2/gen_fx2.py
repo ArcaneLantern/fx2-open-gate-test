@@ -27,8 +27,10 @@ import build_ogfile  # noqa: E402
 import parse_dmmcfg  # noqa: E402
 
 BASE = 0x108000
-LABEL = "fx2read_v3"                                  # v2 (2026-11-26, after the first FX2 test): test-design targets, DMM workspace, snapshot head;
+LABEL = "fx2read_v4"                                  # v2 (2026-11-26, after the first FX2 test): test-design targets, DMM workspace, snapshot head;
                                                       # v3 (2026-11-26, after test 2 worked): the saved output records (page 0x15cd000)
+                                                      # v4 (2026-11-26, after test 3 crashed): a second test design per site (TEST2: ogh2560_fx2_v1),
+                                                      # the fallback's code word (soft), the page of the resize margin words (0x190f000)
 # coprocessor addresses a read may have: its logs (tomco.txt, the A7 IV's), image and RAM tables, and (v2) the snapshot debug image's first
 # pages (/cp/tomco.txt: snapshotdbg_addr=0x09A21E00, snapshotdbg_size=0x03000000, inside memcfg=0x7000000@0x09000000:uc)
 CP_LO, CP_HI = 0xC0000, 0x9B00000
@@ -52,7 +54,9 @@ DUMP_FIXED = (("shadow", 0x12FE000, 1), ("matrix", 0x11EA000, 2), ("sizetable", 
               # the resize state (A7 IV 0x1450000 + 3 pages: result 0x145091c, drive-parameter copy 0x1450bc4, module settings 0x1452480;
               # FX2 0x190cf38.. / 0x190d014 / 0x190ea40, the block's own layout moved, so the dump decoder searches it for known sizes) and
               # the resize working structure (A7 IV 0x11e1510, FX2 0x15e4298 / 0x15e42d0)
-              ("resizestate", 0x190C000, 3), ("resizework", 0x15E4000, 1),
+              # v4: a fourth page, 0x190f000: the margin words 0xbd6f34 returns (u16 at 0x190f46e..0x190f47c) and its switch 0x190fcd0; with a
+              # margin the resize set-up's override (0xbd3a32) asks the first scaler for more than the output size
+              ("resizestate", 0x190C000, 4), ("resizework", 0x15E4000, 1),
               # the memory manager (dmmwb4688_fx2_v1): its page of pointers 0x192f000, the unit records with the four sites 0x2483860.. and the
               # parent records 0x2481440..
               ("dmmglobals", 0x192F000, 1), ("dmmrecs", 0x2483000, 1), ("dmmparents", 0x2481000, 1),
@@ -62,15 +66,28 @@ DUMP_FIXED = (("shadow", 0x12FE000, 1), ("matrix", 0x11EA000, 2), ("sizetable", 
               # A7 IV (build/dmm_dump.py): handle records, the unit objects at +0x107e0 (0x21b64f8, the L13 report), scene and group counters.
               # Objects of divisions merged back keep their contents for a while: which ids and sizes were opened lately, e.g. in movie.
               ("dmmworkspace", 0x21A5000, 54),
-              # v3: the saved copy of the camera core's output records (A7 IV 0x11cf838, read by its level 15: format code 2 in 4K, F686), ported
-              # by code reference to 0x15cd7e0 (build/port_addr.py, 6 of 6 references; 0xbc75de returns it to the output-buffer chooser 0x51cb38),
-              # and the parameter view before it (A7 IV 0x11cf578 -> 0x15cd520). Per output (stride 0x2c from +4): w, h at +4/+6, format code at
-              # +0x20 (picture bytes x1 / x1.25 / x1.5 / x2 for codes 1-4, 0x51ee00), type word at +0x28 (2: the FX2-only "rc_out" case, 1: 0x4c3/0x4c4)
+              # v3: the saved copy of the camera core's output records (A7 IV 0x11cf838, read by its level 15: format code 2 in 4K, F686) and the
+              # parameter view before it (A7 IV 0x11cf578 -> 0x15cd520, 0xbc6ebc returns it). CORRECTED in v4: the records are at 0x15cdef8 (the
+              # getter 0xbc75de: movw/movt 0x15cdef8), not at 0x15cd7e0 as port_addr.py guessed and the third kit decoded (zeros there). Both
+              # lie in these two pages; the tester's v3 dumps hold them: four records 3840x2160 / 1920x1080 x2 / 3840x2160, format code 2, type 0.
+              # Per output (stride 0x2c from +4): w, h at +4/+6, format code at +0x20 (picture bytes x1 / x1.25 / x1.5 / x2 for codes 1-4,
+              # 0x51ee00), type word at +0x28 (2: the FX2-only "rc_out" case, 1: 0x4c3/0x4c4)
               ("outrecs", 0x15CD000, 2))
 # v2: read LAST, because a failed read stops every read after it: the first four pages of the snapshot debug image, which the coprocessor
 # saves on an exception ('Snapshot Debug Image Saved' in the first test's kprint record; the code's tag 'SOLID_SSHOT')
 DUMP_LAST = (("snapshot", 0x9A21000, 4),)
-TEST_DESIGNS = ("fhband_fx2_v1",)                    # v2: a sensor site may hold a test design's bytes instead (reported TEST)
+# v2: a sensor site may hold a test design's bytes instead (reported TEST); v4: a second one (reported TEST2), ogh2560_fx2_v1, the fourth
+# kit's sensor-side design (ogsq_fx2_v1 with records whose first scaler gives 4336x2560)
+TEST_DESIGNS = ("fhband_fx2_v1", "ogh2560_fx2_v1")
+FEHOLD = "fehold_fx2_v1"                             # v4: the fallback's one code word (soft: reported, not counted)
+RESIZE_VIEW, OUTPUT_TEMPLATE = 0x15CD520, 0x15CDEF8  # 0xbc6ebc / 0xbc75de return them
+MARGIN_WORDS, MARGIN_SWITCH = 0x190F46E, 0x190FCD0   # 0xbd6f34: eight u16 words (..0x190f47c); a non-zero switch makes it return 0
+
+
+def first_scaler_size(left, right):
+    """The first-stage scaler's picture as 0x7cccc2 reads it from a split mode's two records (first key's record, then the second's)."""
+    u = lambda b, o: struct.unpack_from("<H", b, o)[0]
+    return [u(right, 0x190) + u(right, 0x1A4) - u(left, 0x1A0), u(right, 0x1A6)]
 
 
 def c_bytes(b):
@@ -100,7 +117,7 @@ def main():
     out.append(f'#define FX2_LABEL "{LABEL}"\n#define CP_LO {CP_LO:#x}U\n#define CP_HI {CP_HI:#x}U\n#define AVCAM_PHYS {AVCAM_PHYS:#x}UL\n'
                f'#define AVCAM_RESERVE "{AVCAM_RESERVE}"')
     out.append("struct id_file { const char *name; unsigned char sha256[32]; };\nstruct id_page { unsigned int address; unsigned char sha256[32]; };\n"
-               "struct cp_site { const char *name; unsigned int address, length; const unsigned char *stock, *target; int soft; const unsigned char *alt; };\n"
+               "struct cp_site { const char *name; unsigned int address, length; const unsigned char *stock, *target; int soft; const unsigned char *alt, *alt2_sha; };\n"
                "struct mp_site { unsigned long offset; unsigned int length; const unsigned char *stock, *target; };\n"
                "struct av_guard { const char *name; unsigned long offset; unsigned int length; unsigned char sha256[32]; };\n"
                "struct dump_range { const char *name; unsigned int address, pages; };")
@@ -113,8 +130,8 @@ def main():
         assert td["artifact_sha256"] == sha_cp and td["mode_index"] == og["mode_index"]
         assert sorted(int(q["addr"], 16) for q in td["patches"]) == sorted(int(q["addr"], 16) for q in og["patches"])
         for q in td["patches"]:
-            alt[int(q["addr"], 16)] = bytes.fromhex(q["new"])
-        alt[int(td["stored_record"]["address"], 16)] = bytes.fromhex(td["stored_record"]["design"])
+            alt.setdefault(int(q["addr"], 16), []).append(bytes.fromhex(q["new"]))
+        alt.setdefault(int(td["stored_record"]["address"], 16), []).append(bytes.fromhex(td["stored_record"]["design"]))
     for p in og["patches"]:
         a, old, new = int(p["addr"], 16), bytes.fromhex(p["old"]), bytes.fromhex(p["new"])
         assert cp[a - BASE:a - BASE + len(old)] == old and len(old) == len(new)
@@ -133,6 +150,12 @@ def main():
         if BASE <= a < BASE + len(cp):
             assert cp[a - BASE:a - BASE + 4] == old
         sites.append((f"screen{k}", a, old, bytes.fromhex(s["new"]), 1))
+    fh = design(FEHOLD)                                   # v4, soft: the fallback step is optional
+    assert fh["build"] == "fx2_101" and len(fh["sites"]) == 1
+    for s in fh["sites"]:
+        a, old = int(s["ram_address"], 16), bytes.fromhex(s["old"])
+        assert cp[a - BASE:a - BASE + 4] == old
+        sites.append(("fehold", a, old, bytes.fromhex(s["new"]), 1))
     for k, s in enumerate(dm["sites"]):                   # the memory manager's RAM copy is filled from DmmCfg.bin at start-up: not soft
         kind = "size" if int.from_bytes(bytes.fromhex(s["old"]), "little") == 27864320 else "key"
         sites.append((f"rawbuf_{kind}{k}", int(s["ram_address"], 16), bytes.fromhex(s["old"]), bytes.fromhex(s["new"]), 0))
@@ -143,9 +166,13 @@ def main():
     rows = []
     for name, a, old, new, soft in sites:
         assert CP_LO <= a and a + len(old) <= CP_HI and len(old) <= 3072
-        al = alt.get(a) if not name.startswith(("outsize", "screen", "rawbuf")) else None
-        assert al is None or len(al) == len(old)
-        rows.append(f'    {{"{name}", {a:#x}, {len(old)}, {blob(old)}, {blob(new) if new is not None else "0"}, {soft}, {blob(al) if al is not None else "0"}}},')
+        # a test design's bytes at this site, in TEST_DESIGNS' order (TEST, TEST2); none where they equal the design's own (TARGET). The second
+        # one is carried as its SHA-256: with both records' 6,000 bytes the library would pass the 65,520 bytes one upload packet holds
+        als = [x if x != new else None for x in alt.get(a, [])] if not name.startswith(("outsize", "screen", "rawbuf", "fehold")) else []
+        als = (als + [None, None])[:2]
+        assert len(alt.get(a, [])) <= 2 and all(x is None or len(x) == len(old) for x in als)
+        rows.append(f'    {{"{name}", {a:#x}, {len(old)}, {blob(old)}, {blob(new) if new is not None else "0"}, {soft}, '
+                    f'{blob(als[0]) if als[0] is not None else "0"}, {blob(hashlib.sha256(als[1]).digest()) if als[1] is not None else "0"}}},')
     out.append("static const struct cp_site cp_sites[] = {\n" + "\n".join(rows) + "\n};")
     # ---- main-processor sites
     lmr, avr, av_hi = [], [], 0
@@ -187,7 +214,8 @@ def main():
              "id_pages": {hex(a): hashlib.sha256(cp[a - BASE:a - BASE + 4096]).hexdigest() for a in ID_PAGES},
              "cp_sites": [{"name": n, "address": hex(a), "length": len(o), "soft": s} for n, a, o, _, s in sites],
              "lm_sites": len(lmr), "av_sites": len(avr), "av_guards": [g[0] for g in guards], "dump_ranges": [[n, hex(a), k] for n, a, k in dump_ranges],
-             "designs": {d["design"]: hashlib.sha256((DES / (d["design"] + ".json")).read_bytes()).hexdigest() for d in (og, oz, fl, sc, dm)}}
+             "designs": {d["design"]: hashlib.sha256((DES / (d["design"] + ".json")).read_bytes()).hexdigest()
+                         for d in (og, oz, fl, sc, dm, fh) + tuple(design(tn) for tn in TEST_DESIGNS)}}
     (HERE / "fx2_expected.json").write_text(json.dumps(facts, indent=1) + "\n", encoding="utf8", newline="\n")
     # ---- what the PC needs to read a dump without the firmware files
     matrix = []
@@ -197,6 +225,12 @@ def main():
         matrix.append([a, cp[MATRIX - BASE + 24 * k + 4:MATRIX - BASE + 24 * k + 24].hex()])
     assert not any(cp[MATRIX - BASE + 24 * MATRIX_ROWS:MATRIX - BASE + 24 * MATRIX_ROWS + 24]) and MATRIX + 24 * (MATRIX_ROWS + 1) == COLMAP
     emu = json.loads((ROOT / "evidence/fx2/drvparam_stock_fx2_101.json").read_text(encoding="utf8"))["modes"]
+    rpair = lambda d, key: [bytes.fromhex(q[key]) for q in sorted((q for q in d["patches"] if q["kind"] == "R"), key=lambda q: int(q["addr"], 16))]
+    assert [int(q["addr"], 16) for q in og["patches"] if q["kind"] == "R"] == [0xDF9958, 0xDFA510]
+    rec_designs = {"STOCK": {"design": "stock", "first_scaler": first_scaler_size(*rpair(og, "old"))},
+                   "TARGET": {"design": og["design"], "first_scaler": first_scaler_size(*rpair(og, "new"))}}
+    for word, tn in zip(("TEST", "TEST2"), TEST_DESIGNS):
+        rec_designs[word] = {"design": tn, "first_scaler": first_scaler_size(*rpair(design(tn), "new"))}
     ref = {"about": "FX2 1.01 reference data for reading an fx2read dump; from cpapp-b.bin and build/emu_drvparam.py fx2_101", "matrix_address": hex(MATRIX),
            "matrix_row_bytes": 24, "matrix": matrix, "column_map": list(struct.unpack_from("<%dI" % NMODES, cp, COLMAP - BASE)),
            "mode_ids": [hex(x) for x in struct.unpack_from("<%dI" % NMODES, cp, IDS - BASE)], "records_address": hex(RECS), "record_size": REC,
@@ -209,6 +243,16 @@ def main():
                    "resize_settings": "0x190ea40", "resize_work": "0x15e4298", "shadow_reg_0x01_a7iv": "0x1033c7e"},
            # v2: the test designs' stored-record bytes, and what the PC needs to read the memory manager's workspace without the firmware files
            "test_designs": {tn: {"stored_record_design": design(tn)["stored_record"]["design"], "title": design(tn)["title"]} for tn in TEST_DESIGNS},
+           # v4: what the two picture records in place say (the state word the helper prints for site record_left / record_right) and the
+           # first-scaler picture those records give (0x7cccc2's reading: right +0x190 + right +0x1a4 - left +0x1a0, right +0x1a6)
+           "record_designs": rec_designs,
+           "resize_view": {"address": hex(RESIZE_VIEW), "bytes": 0x54, "flags": 7, "first_stage_at": 0x14, "crop_at": 0x38, "first_scaler_at": 0x3C,
+                           "output_at": 0x40, "mode_at": 0x44,
+                           "note": "the saved copy of the view the resize set-up 0x51fbc0 fills. Byte +5 set: the FX2 stores max(the records' "
+                                   "first-scaler size, output size / (1 - margin)) at +0x3c/+0x3e (0xbd3a32). If that is more than the records "
+                                   "give, the second scaler is handed a size the first scaler does not deliver (the L16 crash of 2026-11-26)"},
+           "margin_words": {"address": hex(MARGIN_WORDS), "count": 8, "switch": hex(MARGIN_SWITCH),
+                            "note": "0xbd6f34 returns one of these u16 words (of 0x10000) when its mode arguments say so, 0 otherwise or when the switch is not zero"},
            "dmm": {"workspace_pointer": "0x192fc28", "units_pointer": "0x192f77c", "workspace_expected": "0x21a5d18", "units_at": 0x107E0,
                    "workspace_bytes": 0x35230, "objects": 0x580, "object_bytes": 0x50, "handles": 0x3FF, "handle_bytes": 0x40,
                    "scene_index_at": 0x33410, "scene_stack_at": 0x33418, "group_use_at": 0x33428,
@@ -217,13 +261,14 @@ def main():
                    "note": "unit objects of 0x50 bytes: +0 index u16, +2 flags u16 (bit 0 divided), +8 base u64, +0x10 offset, +0x14 size, +0x20 parent object, "
                            "+0x24 key, +0x28 owner handle, +0x30 group it is divided as (build/dmm_dump.py, A7 IV layout; on the FX2 the unit objects' offset "
                            "+0x107e0 was confirmed by the first test's L13 report)"},
-           "output_records": {"template": "0x15cd7e0", "first_record": "0x15cd7e4", "stride": 0x2C, "records": 4, "w_at": 4, "h_at": 6, "code_at": 0x20,
+           "output_records": {"template": hex(OUTPUT_TEMPLATE), "first_record": hex(OUTPUT_TEMPLATE + 4), "stride": 0x2C, "records": 4, "w_at": 4, "h_at": 6, "code_at": 0x20,
                               "type_at": 0x28, "factor_by_code": {"1": 1.0, "2": 1.25, "3": 1.5, "4": 2.0},
                               "buffers": {"0x2d9": 13271040, "0x4c4": 13271040, "0x4c3": 3317760, "0x295": 3317760, "0x43f": None, "0x69c": None},
                               "note": "0x51cb38 / 0x51cc58 (FX2): records 1-3 choose their buffer id from w x h x factor: type 1 -> 0x4c3 below 3,317,761 bytes else 0x4c4; type 2 -> 0x69c below it else 0x2d9 with the log line FW: error! rc_out[%d] image data size excerrd mem size; otherwise for 0x295/0x43f/0x2d9: 13,271,041 or more -> 0x43f (no row in the FX2 DmmCfg.bin), more than 3,317,760 -> 0x2d9, else 0x295"},
            "snapshot": {"address": "0x9a21e00", "size": "0x3000000", "tag": "SOLID_SSHOT",
                         "note": "the coprocessor's snapshot debug image (/cp/tomco.txt); its format is not known: the dump copies its first pages"}}
-    assert len(ref["emulated_stock_records"]) == NMODES
+    assert len(ref["emulated_stock_records"]) == NMODES and ref["record_designs"]["STOCK"]["first_scaler"] == [4336, 2438] \
+        and ref["record_designs"]["TEST2"] == {"design": "ogh2560_fx2_v1", "first_scaler": [4336, 2560]}
     (HERE / "fx2_reference.json").write_text(json.dumps(ref) + "\n", encoding="utf8", newline="\n")
     print(f"fx2_expected.h: {len(sites)} coprocessor sites ({len(sc['sites'])} of the screen, {len(dm['sites'])} of the raw write buffer), "
           f"{len(lmr)} libmpr sites, {len(avr)} av-cam sites, {len(dump_ranges)} dump ranges, {len(text)} bytes of header")

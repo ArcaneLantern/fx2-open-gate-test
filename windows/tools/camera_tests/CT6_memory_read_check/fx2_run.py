@@ -1,6 +1,9 @@
 """FX2 (ILME-FX2) firmware 1.01: run one of the two READ-ONLY helper libraries, or one write step, and save what it reports.
 (Second kit, 2026-11-26: read helper fx2read_v2, the diagnostic ladder's step pair B5/B6, the dump decodes the memory manager's
 workspace and the first pages of the crash snapshot image.)
+(Fourth kit, 2026-11-26, after L13 + L5 + L16 crashed on MOVIE: read helper fx2read_v4, step pairs H5/H6 (ogh2560_fx2_v1: records whose
+first scaler gives 4336x2560) and F16/F17 (fehold_fx2_v1, the fallback's code word); the dump decodes the saved resize view and the
+output records at their real address 0x15cdef8.)
 
   python fx2_run.py check --dry-run | --selftest
   python fx2_run.py dump  --dry-run | --selftest
@@ -40,8 +43,9 @@ import ct6_level1_run as R  # noqa: E402
 
 FIRMWARE, MODEL, BUILD = "1.01", "ILME-FX2", "fx2_101"
 S3 = HERE / "helper_fx2"                       # this kit's folder (the name S3 is kept from s3_run.py)
-PINS = {"check": ("libJit_fx2_check.so", "696c9be6f27f1ef82a9b341e2fbcf29e19641247df6098bb8b3903db8afa612c"),      # fx2read_v3 (2026-11-26, third kit)
-        "dump": ("libJit_fx2_dump.so", "6a234dde54ddb8baec407bd2a9cec1405b737b60579e705f59f6a17ee5dc5632")}
+PINS = {"check": ("libJit_fx2_check.so", "97516ead690e876181fa41687d252cdd97c5da053383a7e884f7669da30ceff6"),      # fx2read_v4 (2026-11-26, fourth kit)
+        "dump": ("libJit_fx2_dump.so", "f4cb345a68ff26944aba2241edf34f2d4ff6c55404cda60fe3277990e5248efe")}
+# fx2read_v3 (third kit, ran on the tester's FX2 2026-11-26): check 696c9be6..., dump 6a234dde...
 # fx2read_v2 (second kit, ran on the tester's FX2 2026-11-26): check 9dd469a2..., dump 1f51dc2a...
 # the first kit's read helper (fx2read_v1, 2026-11-25; ran on the first tester's FX2): check e3838945..., dump 5008ec3a...
 LEVELS = {"check": 101, "dump": 102}              # numbers outside the A7 IV runner's own levels: none of its level-specific code runs
@@ -60,8 +64,19 @@ WRITE_STEPS = {
     # has its stock height. Tells whether the FX2 runs the full-height read-out at all.
     "B5": ("libJit_fx2_B5.so", "23e19cbeac5e4378783abe75a9dde5547ac246912c90b6ec8ea77489a0defefc", "apply the test design fhband_fx2_v1 (full-height read-out with the stock 16:9 band: the A7 IV's fhband_v1)"),
     "B6": ("libJit_fx2_B6.so", "ea9c86281af81203176c9fd2b7d7511a7f85b2c5e6c71df2df0f2434a2eb1377", "put back the test design fhband_fx2_v1"),
+    # Fourth kit (2026-11-26), after test 3 (L13 + L5 + L16) crashed on MOVIE entry. The FX2's resize set-up (0x51fbc0) raises the first-scaler
+    # size it hands the second scaler to at least the output size (0xbd3a32; only the FX2 and the A1 II have it), so with the 3840x2560 output
+    # size it says 4336x2560 while L5's records make the first scaler give 4336x2438 (build/emu_rcinput_fx2.py). H5 = the same levels 5/6 with
+    # ogh2560_fx2_v1 = the A7 IV's ogh2560_v1 (F712, F713: works on the A7 IV): L5's sensor cells and stored record, records whose first
+    # scaler gives 4336x2560. It takes L5's place.
+    "H5": ("libJit_fx2_H5.so", "47be321cecb37fcba26c0e2b7e8017c931ad339d37bf4e131d3d46f3ed6f7bf5", "apply the sensor-side design ogh2560_fx2_v1 (L5's sensor cells and stored record, with records whose first scaler gives 4336x2560: the A7 IV's ogh2560_v1)"),
+    "H6": ("libJit_fx2_H6.so", "e459d65ca595895933165fa2b3a78de136789d69e0c825a749f32c4e09a74528", "put back the sensor-side design ogh2560_fx2_v1"),
     "L16": ("libJit_fx2_L16.so", "744dd7eb1b8f0cd79fde6f508b39988e9c92bc37ef1f10f30783ce2ae2ee441a", "apply the output size outsz2560_fx2_v1 (one word)"),
     "L17": ("libJit_fx2_L17.so", "d2d62a12fc2f99f69423fa42d96e9650be6c8aba30982b11d281a5925d2e5098", "put back the output size outsz2560_fx2_v1"),
+    # Fourth kit, the FALLBACK (with L5, not with H5): the same level 16/17 code with one CODE word of the resize set-up, 0x51fefa
+    # `cbz r0, 0x51ff22` -> `b 0x51ff22`, so the override is skipped and the second scaler enlarges 2,438 rows to 2,560 as on the A7 IV.
+    "F16": ("libJit_fx2_F16.so", "73a87e6d00be9c5e3b1ba57e15b147f11edba09306254ed2c49e8ae4c9afcad2", "apply the code word fehold_fx2_v1 (the resize set-up keeps the first-scaler size the records give: one word)"),
+    "F17": ("libJit_fx2_F17.so", "6cc77afdb1308029b0924af8d03bb3bae562d76a17a54bf4465a5613c42c5d2a", "put back the code word fehold_fx2_v1"),
     # L19/L20: ogfile2560_hs_s_fx2_v2 = the A7 IV's encoder side (101 + 4 sites) + the two MP4 header heights, so tkhd, stsd and Sony's PROF say
     # 3840x2560 (the A7 IV's working ogfile2560_hs_s_v2). L20 puts back either version. N19 = the same without the heights (apply --no-meta).
     "L19": ("libJit_fx2_L19.so", "e2a695989c05bdb4261892f46414d5b9d9bf42e87f30c6103035834beefb3525", "apply the encoder-side design ogfile2560_hs_s_fx2_v2 (101 + 4 sites, and the MP4 headers say 3840x2560: 2 more)"),
@@ -73,7 +88,7 @@ WRITE_STEPS = {
     "S17": ("libJit_fx2_S17.so", "34075aa0bf39d67ca5623bc0913599fd3c2ada3916bb2ba99d63bc214339b0d8", "put back the screen words lcd32dsq_fx2_v1"),
 }
 PINS.update({k: v[:2] for k, v in WRITE_STEPS.items()})
-LEVELS.update({k: {"L": 200, "S": 300, "N": 500, "B": 700}[k[0]] + int(k[1:]) for k in WRITE_STEPS})
+LEVELS.update({k: {"L": 200, "S": 300, "N": 500, "B": 700, "H": 800, "F": 900}[k[0]] + int(k[1:]) for k in WRITE_STEPS})
 WHICH = "check"
 FULL_HEIGHT_COLUMN = 5          # the register-matrix column of the full-height read-out (ogsq_fx2_v1's S0: mode 0x8c0 column 6 -> 5, as on the A7 IV)
 
@@ -120,7 +135,7 @@ def check_result(data):
             pages[int(addr, 16)] = (name, bytes.fromhex(hx.strip()))
     sites = []
     for ln in lines:
-        m = re.match(r"site (\S+) (0x[0-9a-f]+) len (\d+)(?: bytes (?:differing from stock )?(\S+))?  (STOCK|TARGET|TEST|OTHER.*|NOT READ)$", ln)
+        m = re.match(r"site (\S+) (0x[0-9a-f]+) len (\d+)(?: bytes (?:differing from stock )?(\S+))?  (STOCK|TARGET|TEST2?|OTHER.*|NOT READ)$", ln)
         if m:
             sites.append({"name": m.group(1), "address": m.group(2), "length": int(m.group(3)), "shown": m.group(4), "state": m.group(5)})
     s3 = {"header": head, "verdict": verdict, "ready": verdict.startswith("VERDICT READY"),
@@ -134,6 +149,12 @@ def check_result(data):
     s3["kernel_command_line"], s3["kernel_version"] = (cmd.group(1).strip() if cmd else None), (ver.group(1).strip() if ver else None)
     if pages:
         s3["decoded"] = decode_pages(pages)
+        # v4: the first-scaler size the saved resize view holds, against the one the picture records in place give
+        rv, rd = s3["decoded"].get("resize_view"), reference().get("record_designs", {})
+        states = {x["state"] for x in sites if x["name"] in ("record_left", "record_right")}
+        if rv and len(states) == 1 and next(iter(states)) in rd:
+            info = rd[next(iter(states))]
+            rv.update(records_in_place=info["design"], first_scaler_by_records=info["first_scaler"], sizes_agree=rv["first_scaler"] == info["first_scaler"])
     import hashlib
     return {"bytes": len(data), "sha256": hashlib.sha256(data).hexdigest(), "header_ok": head.startswith("fx2read ") and "ILME-FX2 1.01" in head, "euid": "not read",
             "sections": [ln for ln in lines if ln.startswith("== ")], "problems": len(s3["problem_lines"]), "complete": "== done" in lines[-3:],
@@ -290,8 +311,22 @@ def decode_pages(pages):
             sizes = lambda key: sorted({o["size"] for o in objs if o["key"] == key})
             w["raw_write_buffer_units_seen"] = {"0x57f (id 0x43e)": sizes(0x57F), "0x6a3 (id 0x608)": sizes(0x6A3), "0x704 (id 0x63d)": sizes(0x704)}
         out["memory_manager"] = w
-    # v3: the saved output records (0x15cd7e0, the copy the output-buffer chooser 0x51cb38 reads): size, format code, type, and the picture bytes
-    # against the buffer the chooser would take
+    # v4: the saved resize view (0x15cd520, what 0x51fbc0 filled last): its flag bytes, the first stage, the crop, the first-scaler size it
+    # hands the second scaler, the output size and the drive mode; and the margin words 0xbd6f34 can return
+    rvf = ref.get("resize_view")
+    b = mem(int(rvf["address"], 16), rvf["bytes"]) if rvf else None
+    if b is not None:
+        pair = lambda o: list(struct.unpack_from("<HH", b, o))
+        out["resize_view"] = {"address": rvf["address"], "flags": list(b[:rvf["flags"]]), "follows_output_size": bool(b[5]), "first_stage": pair(rvf["first_stage_at"]),
+                              "crop": pair(rvf["crop_at"]), "first_scaler": pair(rvf["first_scaler_at"]), "output": pair(rvf["output_at"]),
+                              "mode": hex(struct.unpack_from("<I", b, rvf["mode_at"])[0]), "bytes": b.hex()}
+    mw = ref.get("margin_words")
+    if mw:
+        words, sw_ = mem(int(mw["address"], 16), 2 * mw["count"]), mem(int(mw["switch"], 16), 4)
+        if words is not None and sw_ is not None:
+            out["margin_words"] = {"address": mw["address"], "words": list(struct.unpack("<%dH" % mw["count"], words)), "switch": struct.unpack("<I", sw_)[0]}
+    # v3: the saved output records (the copy the output-buffer chooser 0x51cb38 reads; v4: at 0x15cdef8, where 0xbc75de says they are, not at
+    # 0x15cd7e0): size, format code, type, and the picture bytes against the buffer the chooser would take
     orf = ref.get("output_records")
     if orf:
         first = int(orf["first_record"], 16)
@@ -341,7 +376,7 @@ def run_helper(data):
     try:
         import emu_fx2
     except Exception:
-        text = "fx2read fx2read_v1 %s for ILME-FX2 1.01; read-only\n== file /proc/version\nLinux (simulated)\n\n== end 18 bytes\n== summary\nVERDICT READY (canned)\n== done\n" % WHICH
+        text = "fx2read fx2read_v4 %s for ILME-FX2 1.01; read-only\n== file /proc/version\nLinux (simulated)\n\n== end 18 bytes\n== summary\nVERDICT READY (canned)\n== done\n" % WHICH
         return text.encode(), "canned"
     r, text = emu_fx2.run(bytes(data))
     if r.bad:
@@ -408,6 +443,10 @@ def selftest(lib):
             orr = d.get("output_records") or []
             check([(r["w"], r["h"], r["format_code"]) for r in orr] == [(3840, 2160, 2), (1920, 1080, 2), (1920, 1080, 2), (3840, 2160, 2)],
                   "dump: the saved output records decode (model: 3840x2160 / 1920x1080 x2 / 3840x2160, format code 2)")
+            rv = d.get("resize_view", {})
+            check(rv.get("flags", [])[4:6] == [1, 1] and rv.get("first_scaler") == [4336, 2438] and rv.get("output") == [3840, 2160] and rv.get("mode") == "0x8c0"
+                  and rv.get("records_in_place") == "stock" and rv.get("sizes_agree") is True and d.get("margin_words", {}).get("words") == [0] * 8,
+                  "dump: the saved resize view decodes (model: first scaler 4336x2438 as the stock records give, output 3840x2160) and the margin words read")
             dp = d.get("display", {})
             check(dp.get("fit_16x9_picture") == {"on_4x3_panel": 3, "on_3x2_panel": 3}
                   and all(v == {"row0": [0, 60, 640, 360], "row1": [0, 38, 640, 404], "row2": [0, 60, 640, 360]} for v in dp.get("frame_rectangles_16x9_picture", {"x": 0}).values())
@@ -479,6 +518,23 @@ def report(session, facts, which):
         for r in d.get("output_records") or []:
             lines.append("output record %d: %dx%d, format code %d, type %d; picture %s bytes (at 3840x2560: %s; buffers 0x2d9 / 0x4c4 hold 13,271,040)"
                          % (r["record"], r["w"], r["h"], r["format_code"], r["type"], r["picture_bytes"], r["bytes_at_3840x2560"]))
+        rv = d.get("resize_view")
+        if rv:
+            lines.append("resize view %s: flag bytes +4/+5 = %d/%d (%s); first stage %dx%d, crop %dx%d, first scaler %dx%d, output %dx%d, mode %s"
+                         % (rv["address"], rv["flags"][4], rv["flags"][5], "the first-scaler size follows the output size" if rv["follows_output_size"] else "no override",
+                            *rv["first_stage"], *rv["crop"], *rv["first_scaler"], *rv["output"], rv["mode"]))
+            if "records_in_place" in rv:
+                lines.append("  the picture records in place (%s) give a first scaler of %dx%d: %s"
+                             % (rv["records_in_place"], *rv["first_scaler_by_records"],
+                                "the view agrees" if rv["sizes_agree"] else "the view DIFFERS (the second scaler is handed a size the first scaler does not deliver; "
+                                "the view may also be left from an earlier state)"))
+        mw = d.get("margin_words")
+        if mw:
+            lines.append("resize margin words at %s: %s; switch %d (all zero: the override asks for no more than the output size)"
+                         % (mw["address"], ", ".join(str(x) for x in mw["words"]), mw["switch"]))
+        fh = next((x for x in f["coprocessor_sites"] if x["name"] == "fehold"), None)
+        if fh:
+            lines.append("fallback code word (fehold_fx2_v1) at %s: %s" % (fh["address"], fh["state"]))
         sh = d.get("snapshot_head")
         if sh:
             lines.append("snapshot debug image at %s: %s; tag SOLID_SSHOT %s; %d non-zero bytes in its first pages; first bytes %s"
