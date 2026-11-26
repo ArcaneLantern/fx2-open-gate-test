@@ -1,5 +1,5 @@
 {
- "label": "fx2read_v2",
+ "label": "fx2read_v3",
  "cp_lo": 786432,
  "cp_hi": 162529280,
  "avcam_phys": 17196646400,
@@ -323,6 +323,11 @@
    "dmmworkspace",
    "0x21a5000",
    54
+  ],
+  [
+   "outrecs",
+   "0x15cd000",
+   2
   ],
   [
    "display0",

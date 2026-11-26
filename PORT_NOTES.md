@@ -46,6 +46,35 @@ The kept kprint record is identical each time:
 - **New pins:** check 9dd469a2, dump 1f51dc2a, B5 23e19cbe, B6 ea9c8628. Every other library rebuilt to its old pin.
 - **Checks:** emu_fx2 23 cases, emu_fx2_write 57.
 
+## Test 2 works (2026-11-26) and the third kit
+
+**What ran** (issue #1, second comment; evidence `a7iv_map/evidence/fx2/tester_2026-11-26/`; kit fx2read_v2, macOS). Test 2 = L13 + L5, run twice: once with APS-C on by mistake, then from a cold boot with APS-C off.
+- Both DONE. On MOVIE: a steady picture, no purple flash, no restart.
+- Clips: HEVC 3840 × 2160 4:2:2 10-bit, 23.98p (the squeezed picture; plays on a Mac).
+- **The dump on MOVIE** (`041723`): VERDICT READY.
+  - S0–S10 TARGET; the sensor shadow is column 5 (127/129 rows; register row 0 holds 2), the full-height read-out.
+  - The 0x8c0 stored record: 31/31 bytes as the design; L13's words 4/4 applied.
+  - Sizes in the resize pages: 7008 × 4672 (the whole window) and 4336 × 2438.
+  - The memory manager's workspace (at 0x21a5d18 as predicted): the raw write buffer was carved from key 0x57f (id 0x43e) at **33,003,520 bytes**, so L13 takes effect, and nothing of key 0x6a3 (id 0x608): **the id-0x608 lead is ruled out**.
+  - Output buffers: 25 left-over objects of key 0x3f1 (id 0x2d9) at 13,271,040 bytes.
+  - The snapshot area holds uninitialised RAM (no crash happened).
+- **USB quirk:** two dump attempts met HID 054C:096F after the switch; a replug from live view fixed it.
+
+**Conclusion.** The full-height read-out, the 4,688-row stage, the enlarged raw write buffer and the 27/32 squeeze all work on the FX2. The first kit's crash therefore comes from **L16 (output size) or L19 (encoder)**. The tester notes the FX6 kit's bisection also breaks at its L16.
+
+**Read statically since** (FX2 1.01): the output-buffer chooser 0x51cb38 / loop 0x51cc58 (= A7 IV 0xa1fae0) takes the picture bytes from 0x51ee00 (= A7 IV 0x444814: w × h × 1 / 1.25 / 1.5 / 2 for format codes 1–4) for output records 1–3, stride 0x80 in the context.
+- **Type 1:** id 0x4c3 below 3,317,761 bytes, else 0x4c4 (13,271,040).
+- **Type 2, FX2 only:** id 0x69c below it (no row in the coprocessor's DmmCfg), else 0x2d9 (13,271,040) with the log line "FW: error! rc_out[%d] image data size excerrd mem size".
+- **Otherwise** (records holding 0x295 / 0x43f / 0x2d9): 13,271,041 bytes or more gives 0x43f (no row on the FX2, as on the A7 IV; the FX3 and FX6 have one, 53 MB), more than 3,317,760 gives 0x2d9, else 0x295.
+- **At 3840 × 2560** a record of format code 2 needs 12,288,000 bytes and fits; one of code 3 needs 14,745,600 bytes, which goes to 0x43f or overflows 0x2d9 / 0x4c4.
+- **Where the records live.** The records are copied from a template, the saved copy of the output records: A7 IV 0x11cf838 (whose format code 2 its level 15 read on the camera, F686), FX2 **0x15cd7e0** (build/port_addr.py, 6 of 6 references; 0xbc75de returns it to the chooser). Per record: stride 0x2c from +4; w, h at +4/+6; format code at +0x20; type at +0x28.
+
+**The third kit** (`fx2read_v3`: check 696c9be6, dump 6a234dde; no write library changed; APK 0.3):
+- **The dump** also reads pages 0x15cd000–0x15ce000, and the decoder prints each output record's size, format code, type and picture bytes, and its bytes at 3840 × 2560.
+- **Test 3** = L13 + L5 + L16; **test 4** = L13 + L5 + L16 + L19, each followed by the dump on MOVIE.
+- **Order asked of the tester:** test 2 again (the output records in a state that does not crash), then tests 3 and 4.
+- **Checks:** emu_fx2 23 cases (its model now holds output records), every selftest and dry run.
+
 ## What the FX2 is
 
 - **The sensor is the A7 IV's.**

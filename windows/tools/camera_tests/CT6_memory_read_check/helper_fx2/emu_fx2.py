@@ -136,6 +136,13 @@ def model(build="fx2_101", applied=False, screen=True, reserve=True, exists=Fals
         ram[0x192FC28] = struct.pack("<I", WS)    # the page of pointers: workspace and unit objects
         ram[0x192F77C] = struct.pack("<I", UNITS)
         ram[WS] = workspace()
+        # v3: a model of the saved output records (0x15cd7e0): four records 3840x2160 / 1920x1080 / 1920x1080 / 3840x2160, format code 2
+        # (the A7 IV camera's values, F686), types 0
+        orec = bytearray(4 + 4 * 0x2C)
+        for k, (w, h) in enumerate(((3840, 2160), (1920, 1080), (1920, 1080), (3840, 2160))):
+            struct.pack_into("<HH", orec, 4 + 0x2C * k + 4, w, h)
+            struct.pack_into("<I", orec, 4 + 0x2C * k + 0x20, 2)
+        ram[0x15CD7E0] = bytes(orec)
         if test:                                  # a test design at the sensor sites and in the stored record
             td = design(test)
             ram[int(td["stored_record"]["address"], 16)] = bytes.fromhex(td["stored_record"]["design"])

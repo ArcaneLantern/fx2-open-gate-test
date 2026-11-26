@@ -306,7 +306,7 @@ static const unsigned char B300[] = {6,14,129,82};
 static const unsigned char B301[] = {6,64,129,82};
 static const unsigned char B302[] = {6,14,129,82};
 static const unsigned char B303[] = {6,64,129,82};
-#define FX2_LABEL "fx2read_v2"
+#define FX2_LABEL "fx2read_v3"
 #define CP_LO 0xc0000U
 #define CP_HI 0x9b00000U
 #define AVCAM_PHYS 0x401000000UL
@@ -502,6 +502,7 @@ static const struct dump_range dump_ranges[] = {
     {"dmmparents", 0x2481000, 1},
     {"paneltype", 0x19d9000, 1},
     {"dmmworkspace", 0x21a5000, 54},
+    {"outrecs", 0x15cd000, 2},
     {"display0", 0x1f9000, 1},
     {"display1", 0x1fa000, 1},
     {"display2", 0x721000, 1},

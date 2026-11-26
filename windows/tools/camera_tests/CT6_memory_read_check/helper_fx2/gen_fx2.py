@@ -27,7 +27,8 @@ import build_ogfile  # noqa: E402
 import parse_dmmcfg  # noqa: E402
 
 BASE = 0x108000
-LABEL = "fx2read_v2"                                  # v2 (2026-11-26, after the first FX2 test): test-design targets, DMM workspace, snapshot head
+LABEL = "fx2read_v3"                                  # v2 (2026-11-26, after the first FX2 test): test-design targets, DMM workspace, snapshot head;
+                                                      # v3 (2026-11-26, after test 2 worked): the saved output records (page 0x15cd000)
 # coprocessor addresses a read may have: its logs (tomco.txt, the A7 IV's), image and RAM tables, and (v2) the snapshot debug image's first
 # pages (/cp/tomco.txt: snapshotdbg_addr=0x09A21E00, snapshotdbg_size=0x03000000, inside memcfg=0x7000000@0x09000000:uc)
 CP_LO, CP_HI = 0xC0000, 0x9B00000
@@ -60,7 +61,12 @@ DUMP_FIXED = (("shadow", 0x12FE000, 1), ("matrix", 0x11EA000, 2), ("sizetable", 
               # v2: the memory manager's workspace, [0x192fc28] = 0x21a5d18 on the camera (the first test's L13 report), 0x35230 bytes as on the
               # A7 IV (build/dmm_dump.py): handle records, the unit objects at +0x107e0 (0x21b64f8, the L13 report), scene and group counters.
               # Objects of divisions merged back keep their contents for a while: which ids and sizes were opened lately, e.g. in movie.
-              ("dmmworkspace", 0x21A5000, 54))
+              ("dmmworkspace", 0x21A5000, 54),
+              # v3: the saved copy of the camera core's output records (A7 IV 0x11cf838, read by its level 15: format code 2 in 4K, F686), ported
+              # by code reference to 0x15cd7e0 (build/port_addr.py, 6 of 6 references; 0xbc75de returns it to the output-buffer chooser 0x51cb38),
+              # and the parameter view before it (A7 IV 0x11cf578 -> 0x15cd520). Per output (stride 0x2c from +4): w, h at +4/+6, format code at
+              # +0x20 (picture bytes x1 / x1.25 / x1.5 / x2 for codes 1-4, 0x51ee00), type word at +0x28 (2: the FX2-only "rc_out" case, 1: 0x4c3/0x4c4)
+              ("outrecs", 0x15CD000, 2))
 # v2: read LAST, because a failed read stops every read after it: the first four pages of the snapshot debug image, which the coprocessor
 # saves on an exception ('Snapshot Debug Image Saved' in the first test's kprint record; the code's tag 'SOLID_SSHOT')
 DUMP_LAST = (("snapshot", 0x9A21000, 4),)
@@ -211,6 +217,10 @@ def main():
                    "note": "unit objects of 0x50 bytes: +0 index u16, +2 flags u16 (bit 0 divided), +8 base u64, +0x10 offset, +0x14 size, +0x20 parent object, "
                            "+0x24 key, +0x28 owner handle, +0x30 group it is divided as (build/dmm_dump.py, A7 IV layout; on the FX2 the unit objects' offset "
                            "+0x107e0 was confirmed by the first test's L13 report)"},
+           "output_records": {"template": "0x15cd7e0", "first_record": "0x15cd7e4", "stride": 0x2C, "records": 4, "w_at": 4, "h_at": 6, "code_at": 0x20,
+                              "type_at": 0x28, "factor_by_code": {"1": 1.0, "2": 1.25, "3": 1.5, "4": 2.0},
+                              "buffers": {"0x2d9": 13271040, "0x4c4": 13271040, "0x4c3": 3317760, "0x295": 3317760, "0x43f": None, "0x69c": None},
+                              "note": "0x51cb38 / 0x51cc58 (FX2): records 1-3 choose their buffer id from w x h x factor: type 1 -> 0x4c3 below 3,317,761 bytes else 0x4c4; type 2 -> 0x69c below it else 0x2d9 with the log line FW: error! rc_out[%d] image data size excerrd mem size; otherwise for 0x295/0x43f/0x2d9: 13,271,041 or more -> 0x43f (no row in the FX2 DmmCfg.bin), more than 3,317,760 -> 0x2d9, else 0x295"},
            "snapshot": {"address": "0x9a21e00", "size": "0x3000000", "tag": "SOLID_SSHOT",
                         "note": "the coprocessor's snapshot debug image (/cp/tomco.txt); its format is not known: the dump copies its first pages"}}
     assert len(ref["emulated_stock_records"]) == NMODES

@@ -40,8 +40,9 @@ import ct6_level1_run as R  # noqa: E402
 
 FIRMWARE, MODEL, BUILD = "1.01", "ILME-FX2", "fx2_101"
 S3 = HERE / "helper_fx2"                       # this kit's folder (the name S3 is kept from s3_run.py)
-PINS = {"check": ("libJit_fx2_check.so", "9dd469a2c4f6ca10f6c99f55df979aec432c1801d7b28b6056904bf340f8a39a"),      # fx2read_v2 (2026-11-26)
-        "dump": ("libJit_fx2_dump.so", "1f51dc2a60c5f1c4cd540dd20ce628c52f0e2fdb528fcca7c94c4e9df8e7504c")}
+PINS = {"check": ("libJit_fx2_check.so", "696c9be6f27f1ef82a9b341e2fbcf29e19641247df6098bb8b3903db8afa612c"),      # fx2read_v3 (2026-11-26, third kit)
+        "dump": ("libJit_fx2_dump.so", "6a234dde54ddb8baec407bd2a9cec1405b737b60579e705f59f6a17ee5dc5632")}
+# fx2read_v2 (second kit, ran on the tester's FX2 2026-11-26): check 9dd469a2..., dump 1f51dc2a...
 # the first kit's read helper (fx2read_v1, 2026-11-25; ran on the first tester's FX2): check e3838945..., dump 5008ec3a...
 LEVELS = {"check": 101, "dump": 102}              # numbers outside the A7 IV runner's own levels: none of its level-specific code runs
 # THE WRITE STEPS. Each is one library built from the A7 IV helper's write code with this camera's tables (helper_fx2/build_fx2_write.sh).
@@ -289,6 +290,25 @@ def decode_pages(pages):
             sizes = lambda key: sorted({o["size"] for o in objs if o["key"] == key})
             w["raw_write_buffer_units_seen"] = {"0x57f (id 0x43e)": sizes(0x57F), "0x6a3 (id 0x608)": sizes(0x6A3), "0x704 (id 0x63d)": sizes(0x704)}
         out["memory_manager"] = w
+    # v3: the saved output records (0x15cd7e0, the copy the output-buffer chooser 0x51cb38 reads): size, format code, type, and the picture bytes
+    # against the buffer the chooser would take
+    orf = ref.get("output_records")
+    if orf:
+        first = int(orf["first_record"], 16)
+        recs_out = []
+        for k in range(orf["records"]):
+            b = mem(first + orf["stride"] * k, orf["stride"])
+            if b is None:
+                recs_out = None
+                break
+            w, h = struct.unpack_from("<HH", b, orf["w_at"])
+            code = struct.unpack_from("<I", b, orf["code_at"])[0]
+            typ = struct.unpack_from("<I", b, orf["type_at"])[0]
+            factor = orf["factor_by_code"].get(str(code))
+            recs_out.append({"record": k, "w": w, "h": h, "format_code": code, "type": typ, "picture_bytes": int(w * h * factor) if factor else None,
+                             "bytes_at_3840x2560": int(3840 * 2560 * factor) if factor else None})
+        if recs_out is not None:
+            out["output_records"] = recs_out
     # v2: the snapshot debug image's first pages (its format is not known): the tag, whether anything is there, and its printable strings
     sn = ref.get("snapshot")
     if sn:
@@ -385,6 +405,9 @@ def selftest(lib):
                   and any(o["opened_as"] == "0x43e" for o in mm.get("live_objects", [])) and mm.get("left_over_objects"),
                   "dump: the memory manager's workspace decodes (model: a 0x43e unit of 33,003,520 bytes open, a left-over 0x6a3 object)")
             check(d.get("snapshot_head", {}).get("all_zero") is True, "dump: the snapshot area's first pages are read (all zero in the model)")
+            orr = d.get("output_records") or []
+            check([(r["w"], r["h"], r["format_code"]) for r in orr] == [(3840, 2160, 2), (1920, 1080, 2), (1920, 1080, 2), (3840, 2160, 2)],
+                  "dump: the saved output records decode (model: 3840x2160 / 1920x1080 x2 / 3840x2160, format code 2)")
             dp = d.get("display", {})
             check(dp.get("fit_16x9_picture") == {"on_4x3_panel": 3, "on_3x2_panel": 3}
                   and all(v == {"row0": [0, 60, 640, 360], "row1": [0, 38, 640, 404], "row2": [0, 60, 640, 360]} for v in dp.get("frame_rectangles_16x9_picture", {"x": 0}).values())
@@ -453,6 +476,9 @@ def report(session, facts, which):
                     lines.append("  left over: key %s size %d x %d" % (o["key"], o["size"], o["count"]))
                 if mm["left_over_divisions"]:
                     lines.append("  left-over divisions: %s" % ", ".join(mm["left_over_divisions"][:20]))
+        for r in d.get("output_records") or []:
+            lines.append("output record %d: %dx%d, format code %d, type %d; picture %s bytes (at 3840x2560: %s; buffers 0x2d9 / 0x4c4 hold 13,271,040)"
+                         % (r["record"], r["w"], r["h"], r["format_code"], r["type"], r["picture_bytes"], r["bytes_at_3840x2560"]))
         sh = d.get("snapshot_head")
         if sh:
             lines.append("snapshot debug image at %s: %s; tag SOLID_SSHOT %s; %d non-zero bytes in its first pages; first bytes %s"

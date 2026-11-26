@@ -25,6 +25,10 @@ checked against the FX2's own code in emulation. NOTHING OF THIS KIT HAS RUN ON 
   test2    L13 + L5 only (the A7 IV's two-step squeezed baseline, F682): the 4,688-row stage, no output-size, encoder or screen step. Then
            one read-only dump on MOVIE, or, if the camera restarts, after the restart (the kprint record and the snapshot image's head).
            Tests start from a cold boot on STILL. To undo: battery out for 10 seconds.
+  test3    THIRD KIT (2026-11-26), after test 2 worked on the FX2 (steady picture, clips recorded, sensor column 5, the 4,688-row stage with the
+           whole 7008x4672 window, L13's 33,003,520-byte write buffer in use): L13 + L5 + L16, the output size. Then the dump on MOVIE (v3 reads the
+           saved output records: size, format code, type) or, after a restart, the crash record.
+  test4    L13 + L5 + L16 + L19: test 3 and the encoder side (the full open gate without the screen step).
 
 There is no preview-key routine in this kit: the FX2's own De-Squeeze Display (Off, 1.3x, 2.0x on 1.01) is kept, and S16 sets its ratios
 for the 3:2 picture.
@@ -55,8 +59,8 @@ import fx2_run  # noqa: E402
 
 FIRMWARE = fx2_run.FIRMWARE
 STEPS = {"apply": ("L13", "L5", "L16", "L19"), "putback": ("L20", "L17", "L6", "L14"), "screen": ("S16",), "screen-putback": ("S17",),
-         "test1": ("L13", "B5"), "test2": ("L13", "L5")}
-TESTS = ("test1", "test2")
+         "test1": ("L13", "B5"), "test2": ("L13", "L5"), "test3": ("L13", "L5", "L16"), "test4": ("L13", "L5", "L16", "L19")}
+TESTS = ("test1", "test2", "test3", "test4")
 RUNNER = HERE / "fx2_run.py"
 LISTER = HERE.parent / "CT1_usb_first_contact" / "ct1_stage2_service.py"
 STILL = "STILL (the Still/Movie switch on STILL)"
