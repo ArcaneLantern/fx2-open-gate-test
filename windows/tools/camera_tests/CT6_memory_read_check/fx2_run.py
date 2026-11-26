@@ -1,4 +1,6 @@
 """FX2 (ILME-FX2) firmware 1.01: run one of the two READ-ONLY helper libraries, or one write step, and save what it reports.
+(Second kit, 2026-11-26: read helper fx2read_v2, the diagnostic ladder's step pair B5/B6, the dump decodes the memory manager's
+workspace and the first pages of the crash snapshot image.)
 
   python fx2_run.py check --dry-run | --selftest
   python fx2_run.py dump  --dry-run | --selftest
@@ -19,6 +21,7 @@ libraries, pins and result reader. The FX2 is the A7 IV's sensor on the A7C II's
 designs (which work on an A7 IV), ported. Nothing here can send a memory write unless a write step is named with --writes-memory.
 """
 import argparse
+import collections
 import json
 import platform
 import re
@@ -37,8 +40,9 @@ import ct6_level1_run as R  # noqa: E402
 
 FIRMWARE, MODEL, BUILD = "1.01", "ILME-FX2", "fx2_101"
 S3 = HERE / "helper_fx2"                       # this kit's folder (the name S3 is kept from s3_run.py)
-PINS = {"check": ("libJit_fx2_check.so", "e38389451af27302b815679fe0f1086548f1734939068ad6791342011521dd60"),      # fx2read_v1 (2026-11-25)
-        "dump": ("libJit_fx2_dump.so", "5008ec3a23f91b2dec334e6d0a72fea23306d03a1f272d7939b2c72666a8434e")}
+PINS = {"check": ("libJit_fx2_check.so", "9dd469a2c4f6ca10f6c99f55df979aec432c1801d7b28b6056904bf340f8a39a"),      # fx2read_v2 (2026-11-26)
+        "dump": ("libJit_fx2_dump.so", "1f51dc2a60c5f1c4cd540dd20ce628c52f0e2fdb528fcca7c94c4e9df8e7504c")}
+# the first kit's read helper (fx2read_v1, 2026-11-25; ran on the first tester's FX2): check e3838945..., dump 5008ec3a...
 LEVELS = {"check": 101, "dump": 102}              # numbers outside the A7 IV runner's own levels: none of its level-specific code runs
 # THE WRITE STEPS. Each is one library built from the A7 IV helper's write code with this camera's tables (helper_fx2/build_fx2_write.sh).
 # They change the running camera's memory until a cold boot. They are run through fx2_apply.py, never by a launcher of the read-only kit,
@@ -50,6 +54,11 @@ WRITE_STEPS = {
     "L14": ("libJit_fx2_L14.so", "15ec15af57c1590e0b832783c1939c9af41645cf0519a69f72282ad3cd99f991", "put back the raw write buffer dmmwb4688_fx2_v1"),
     "L5": ("libJit_fx2_L5.so", "724174438d0aaeae8c4ba1f611371cade6f7224c11c8b1441bd84e11107cafa9", "apply the sensor-side design ogsq_fx2_v1 (sensor cells, two records, the stored record; the A7 IV's working ogsq_v3)"),
     "L6": ("libJit_fx2_L6.so", "ae85bce19d3d0d73253c03a2fedbdc9e16f2097d5acf751430cf754049a78d5b", "put back the sensor-side design ogsq_fx2_v1"),
+    # Second kit (2026-11-26), the diagnostic ladder's test 1: the same levels 5/6 with fhband_fx2_v1 = the A7 IV's fhband_v1 (F658, worked on the
+    # A7 IV): the sensor in the same full-height mode as L5 (the 11 cells are L5's), but the picture records keep the stock 16:9 band, so the stage
+    # has its stock height. Tells whether the FX2 runs the full-height read-out at all.
+    "B5": ("libJit_fx2_B5.so", "23e19cbeac5e4378783abe75a9dde5547ac246912c90b6ec8ea77489a0defefc", "apply the test design fhband_fx2_v1 (full-height read-out with the stock 16:9 band: the A7 IV's fhband_v1)"),
+    "B6": ("libJit_fx2_B6.so", "ea9c86281af81203176c9fd2b7d7511a7f85b2c5e6c71df2df0f2434a2eb1377", "put back the test design fhband_fx2_v1"),
     "L16": ("libJit_fx2_L16.so", "744dd7eb1b8f0cd79fde6f508b39988e9c92bc37ef1f10f30783ce2ae2ee441a", "apply the output size outsz2560_fx2_v1 (one word)"),
     "L17": ("libJit_fx2_L17.so", "d2d62a12fc2f99f69423fa42d96e9650be6c8aba30982b11d281a5925d2e5098", "put back the output size outsz2560_fx2_v1"),
     # L19/L20: ogfile2560_hs_s_fx2_v2 = the A7 IV's encoder side (101 + 4 sites) + the two MP4 header heights, so tkhd, stsd and Sony's PROF say
@@ -63,7 +72,7 @@ WRITE_STEPS = {
     "S17": ("libJit_fx2_S17.so", "34075aa0bf39d67ca5623bc0913599fd3c2ada3916bb2ba99d63bc214339b0d8", "put back the screen words lcd32dsq_fx2_v1"),
 }
 PINS.update({k: v[:2] for k, v in WRITE_STEPS.items()})
-LEVELS.update({k: {"L": 200, "S": 300, "N": 500}[k[0]] + int(k[1:]) for k in WRITE_STEPS})
+LEVELS.update({k: {"L": 200, "S": 300, "N": 500, "B": 700}[k[0]] + int(k[1:]) for k in WRITE_STEPS})
 WHICH = "check"
 FULL_HEIGHT_COLUMN = 5          # the register-matrix column of the full-height read-out (ogsq_fx2_v1's S0: mode 0x8c0 column 6 -> 5, as on the A7 IV)
 
@@ -110,7 +119,7 @@ def check_result(data):
             pages[int(addr, 16)] = (name, bytes.fromhex(hx.strip()))
     sites = []
     for ln in lines:
-        m = re.match(r"site (\S+) (0x[0-9a-f]+) len (\d+)(?: bytes (?:differing from stock )?(\S+))?  (STOCK|TARGET|OTHER.*|NOT READ)$", ln)
+        m = re.match(r"site (\S+) (0x[0-9a-f]+) len (\d+)(?: bytes (?:differing from stock )?(\S+))?  (STOCK|TARGET|TEST|OTHER.*|NOT READ)$", ln)
         if m:
             sites.append({"name": m.group(1), "address": m.group(2), "length": int(m.group(3)), "shown": m.group(4), "state": m.group(5)})
     s3 = {"header": head, "verdict": verdict, "ready": verdict.startswith("VERDICT READY"),
@@ -238,6 +247,58 @@ def decode_pages(pages):
             disp["desqueeze_words"] = "stock" if all(g == w["stock"] for g, w in zip(g2, dsq)) else "3:2 picture (screen step applied)" if all(g == w["new"] for g, w in zip(g2, dsq)) else "mixed or unknown"
     if disp:
         out["display"] = disp
+    # v2: the memory manager's workspace (build/dmm_dump.py's layout; unit objects of 0x50 bytes at +0x107e0). Live objects are those of the
+    # divisions in force; objects of divisions merged back keep their contents for a while: what was opened lately (e.g. the last movie look).
+    dm = ref.get("dmm")
+    g = mem(int(dm["workspace_pointer"], 16), 4) if dm else None
+    if dm and g is not None:
+        ws = struct.unpack("<I", g)[0]
+        units = ws + dm["units_at"]
+        raw = mem(units, dm["objects"] * dm["object_bytes"]) if ws == int(dm["workspace_expected"], 16) else None
+        w = {"workspace": hex(ws), "as_expected": raw is not None}
+        if raw is not None:
+            objs, by_addr = [], {}
+            for i in range(dm["objects"]):
+                o = raw[i * 0x50:(i + 1) * 0x50]
+                flags = struct.unpack_from("<H", o, 2)[0]
+                base = struct.unpack_from("<Q", o, 8)[0]
+                off, size = struct.unpack_from("<II", o, 0x10)
+                parent, key, owner = struct.unpack_from("<III", o, 0x20)
+                group = struct.unpack_from("<I", o, 0x30)[0]
+                if size == 0 and key == 0:
+                    continue
+                by_addr[units + i * 0x50] = key
+                objs.append({"n": i, "key": key, "address": base + off, "size": size, "owner": owner, "split": bool(flags & 1), "group": group, "parent": parent})
+            split = {units + o["n"] * 0x50 for o in objs if o["split"]}
+            live = [o for o in objs if not o["parent"] or o["parent"] in split]
+            hraw = mem(ws, dm["handles"] * dm["handle_bytes"]) or b""
+            hid = {}
+            for h in range(len(hraw) // 0x40):
+                mem_id = struct.unpack_from("<I", hraw, h * 0x40)[0]
+                if mem_id != 0xFFFFFFFF and any(struct.unpack_from("<12I", hraw, h * 0x40 + 0x10)):
+                    hid[ws + h * 0x40] = mem_id
+            ids = dm["ids_by_key"]
+            name = lambda k: "%#x (ids %s)" % (k, ", ".join(ids.get(hex(k), [])) or "-")
+            w["live_objects"] = [{"key": name(o["key"]), "size": o["size"], "in_use": o["owner"] != 0,
+                                  "opened_as": hex(hid[o["owner"]]) if o["owner"] in hid else None,
+                                  "divided_as_group": hex(o["group"]) if o["split"] and o["group"] < 0x400 else None} for o in live]
+            left = collections.Counter((o["key"], o["size"]) for o in objs if o not in live)
+            w["left_over_objects"] = [{"key": name(k), "size": s, "count": n} for (k, s), n in sorted(left.items())]
+            w["left_over_divisions"] = sorted({"%#x as group %#x" % (o["key"], o["group"]) for o in objs if o not in live and 0 < o["group"] < 0x400})
+            # the raw write buffer: id 0x43e is key 0x57f (27,864,320 stock, 33,003,520 with L13); id 0x608 is key 0x6a3 (27,864,320, not changed)
+            sizes = lambda key: sorted({o["size"] for o in objs if o["key"] == key})
+            w["raw_write_buffer_units_seen"] = {"0x57f (id 0x43e)": sizes(0x57F), "0x6a3 (id 0x608)": sizes(0x6A3), "0x704 (id 0x63d)": sizes(0x704)}
+        out["memory_manager"] = w
+    # v2: the snapshot debug image's first pages (its format is not known): the tag, whether anything is there, and its printable strings
+    sn = ref.get("snapshot")
+    if sn:
+        a0 = int(sn["address"], 16)
+        head = mem(a0, 0x3200)
+        if head is not None:
+            strings = re.findall(rb"[ -~]{6,}", head)
+            out["snapshot_head"] = {"address": sn["address"], "all_zero": not any(head), "first_bytes": head[:64].hex(),
+                                    "tag_found": sn["tag"].encode() in head, "nonzero_bytes": sum(1 for x in head if x),
+                                    "strings": [s.decode("ascii", "replace") for s in strings[:40]]}
     return out
 
 
@@ -319,6 +380,11 @@ def selftest(lib):
             d = f.get("decoded", {})
             check(d.get("matrix_equals_file") and len(d.get("stored_records", {})) == 32 and d.get("size_table"), "dump: the pages decode (matrix, 32 records, size table)")
             check(d.get("raw_write_buffer_words") == {"stock": 4, "new": 0, "other": 0}, "dump: the raw write buffer's words decode as stock")
+            mm = d.get("memory_manager", {})
+            check(mm.get("as_expected") and mm.get("raw_write_buffer_units_seen", {}).get("0x57f (id 0x43e)") == [33003520]
+                  and any(o["opened_as"] == "0x43e" for o in mm.get("live_objects", [])) and mm.get("left_over_objects"),
+                  "dump: the memory manager's workspace decodes (model: a 0x43e unit of 33,003,520 bytes open, a left-over 0x6a3 object)")
+            check(d.get("snapshot_head", {}).get("all_zero") is True, "dump: the snapshot area's first pages are read (all zero in the model)")
             dp = d.get("display", {})
             check(dp.get("fit_16x9_picture") == {"on_4x3_panel": 3, "on_3x2_panel": 3}
                   and all(v == {"row0": [0, 60, 640, 360], "row1": [0, 38, 640, 404], "row2": [0, 60, 640, 360]} for v in dp.get("frame_rectangles_16x9_picture", {"x": 0}).values())
@@ -374,6 +440,25 @@ def report(session, facts, which):
             lines.append("movie size table: " + "; ".join("%dx%d id %#x" % tuple(r) for r in d["size_table"]))
         if d.get("raw_write_buffer_words"):
             lines.append("raw write buffer words (memory manager): %(stock)d stock, %(new)d applied, %(other)d other" % d["raw_write_buffer_words"])
+        mm = d.get("memory_manager")
+        if mm:
+            lines.append("memory manager workspace %s (%s)" % (mm["workspace"], "decoded" if mm["as_expected"] else "NOT at the expected address: not decoded"))
+            if mm.get("as_expected"):
+                lines.append("  raw write buffer units seen (live or left over): %s" % mm["raw_write_buffer_units_seen"])
+                for o in mm["live_objects"]:
+                    if o["in_use"] or o["divided_as_group"]:
+                        lines.append("  live: key %s size %d%s%s" % (o["key"], o["size"], ", open as %s" % o["opened_as"] if o["opened_as"] else "",
+                                                                   ", divided as group %s" % o["divided_as_group"] if o["divided_as_group"] else ""))
+                for o in mm["left_over_objects"][:30]:
+                    lines.append("  left over: key %s size %d x %d" % (o["key"], o["size"], o["count"]))
+                if mm["left_over_divisions"]:
+                    lines.append("  left-over divisions: %s" % ", ".join(mm["left_over_divisions"][:20]))
+        sh = d.get("snapshot_head")
+        if sh:
+            lines.append("snapshot debug image at %s: %s; tag SOLID_SSHOT %s; %d non-zero bytes in its first pages; first bytes %s"
+                         % (sh["address"], "all zero" if sh["all_zero"] else "HOLDS DATA", "found" if sh["tag_found"] else "not found", sh["nonzero_bytes"], sh["first_bytes"][:48]))
+            for s in sh["strings"][:20]:
+                lines.append("  snapshot string: %s" % s[:120])
         ss = d.get("scaler_state")
         if ss:
             lines.append("resize state (pages ported from the A7 IV's by code reference; the block's layout is not confirmed, so sizes are searched):")
@@ -423,7 +508,7 @@ def main():
     ap.add_argument("--remove-only", action="store_true")
     ap.add_argument("--clear-result", metavar="SHA256", help="first delete the result file of an earlier run from the RAM disk, only if its SHA-256 is this")
     ap.add_argument("--firmware-shown")
-    ap.add_argument("--writes-memory", action="store_true", help="needed for a write step (L13, L14, L5, L6, L16, L17, L19, L20, N19, S16, S17): it changes the running camera's memory")
+    ap.add_argument("--writes-memory", action="store_true", help="needed for a write step (L13, L14, L5, L6, B5, B6, L16, L17, L19, L20, N19, S16, S17): it changes the running camera's memory")
     a = ap.parse_args()
     if a.which in WRITE_STEPS and a.go and not (a.dry_run or a.selftest) and not a.writes_memory:
         raise SystemExit("%s is a write step: %s. It needs --writes-memory as well. Use fx2_apply.py. Nothing was sent." % (a.which, WRITE_STEPS[a.which][2]))

@@ -24,10 +24,13 @@ EX = ROOT / "work/extracted/fx2_101/0700_part_image/dev"
 DES = ROOT / "modding/designs"
 sys.path.insert(0, str(ROOT / "build"))
 import build_ogfile  # noqa: E402
+import parse_dmmcfg  # noqa: E402
 
 BASE = 0x108000
-LABEL = "fx2read_v1"
-CP_LO, CP_HI = 0xC0000, 0x2700000                     # coprocessor addresses a read may have: its logs (tomco.txt, the A7 IV's), image and RAM tables
+LABEL = "fx2read_v2"                                  # v2 (2026-11-26, after the first FX2 test): test-design targets, DMM workspace, snapshot head
+# coprocessor addresses a read may have: its logs (tomco.txt, the A7 IV's), image and RAM tables, and (v2) the snapshot debug image's first
+# pages (/cp/tomco.txt: snapshotdbg_addr=0x09A21E00, snapshotdbg_size=0x03000000, inside memcfg=0x7000000@0x09000000:uc)
+CP_LO, CP_HI = 0xC0000, 0x9B00000
 AVCAM_PHYS, AVCAM_RESERVE = 0x401000000, "@0x401000000"   # kemco.txt: memrsv=0x01000000@0x401000000:ex, as on the A7 IV and A7C II
 ID_FILES = {"/libmpr.so": "nflasha15/lib/libmpr.so", "/libsencore.so": "nflasha15/lib/libsencore.so", "/libJiritsu.so": "nflasha15/lib/libJiritsu.so"}
 # four 4 KB pages of coprocessor CODE that no design touches: a low code page, the record selector's (0x27ab64), the movie size table's
@@ -53,7 +56,15 @@ DUMP_FIXED = (("shadow", 0x12FE000, 1), ("matrix", 0x11EA000, 2), ("sizetable", 
               # parent records 0x2481440..
               ("dmmglobals", 0x192F000, 1), ("dmmrecs", 0x2483000, 1), ("dmmparents", 0x2481000, 1),
               # the panel records: rear panel type byte 0x19d98cc (3 = a 3:2 panel), viewfinder 0x19d99fc (build/build_lcd_fx2.py)
-              ("paneltype", 0x19D9000, 1))
+              ("paneltype", 0x19D9000, 1),
+              # v2: the memory manager's workspace, [0x192fc28] = 0x21a5d18 on the camera (the first test's L13 report), 0x35230 bytes as on the
+              # A7 IV (build/dmm_dump.py): handle records, the unit objects at +0x107e0 (0x21b64f8, the L13 report), scene and group counters.
+              # Objects of divisions merged back keep their contents for a while: which ids and sizes were opened lately, e.g. in movie.
+              ("dmmworkspace", 0x21A5000, 54))
+# v2: read LAST, because a failed read stops every read after it: the first four pages of the snapshot debug image, which the coprocessor
+# saves on an exception ('Snapshot Debug Image Saved' in the first test's kprint record; the code's tag 'SOLID_SSHOT')
+DUMP_LAST = (("snapshot", 0x9A21000, 4),)
+TEST_DESIGNS = ("fhband_fx2_v1",)                    # v2: a sensor site may hold a test design's bytes instead (reported TEST)
 
 
 def c_bytes(b):
@@ -69,6 +80,7 @@ def main():
     av = (EX / "nflasha3/av-cam.bin").read_bytes()
     lm = (EX / "nflasha15/lib/libmpr.so").read_bytes()
     og, oz, fl, sc, dm = (design(n) for n in DESIGNS)
+    dcfg = parse_dmmcfg.Config(parse_dmmcfg.find_file("fx2_101"), "fx2_101")
     sha_cp = hashlib.sha256(cp).hexdigest()
     assert og["artifact_sha256"] == sha_cp and og["build"] == "fx2_101"
     assert all(d.get("build") == "fx2_101" for d in (oz, fl, sc, dm))
@@ -82,14 +94,21 @@ def main():
     out.append(f'#define FX2_LABEL "{LABEL}"\n#define CP_LO {CP_LO:#x}U\n#define CP_HI {CP_HI:#x}U\n#define AVCAM_PHYS {AVCAM_PHYS:#x}UL\n'
                f'#define AVCAM_RESERVE "{AVCAM_RESERVE}"')
     out.append("struct id_file { const char *name; unsigned char sha256[32]; };\nstruct id_page { unsigned int address; unsigned char sha256[32]; };\n"
-               "struct cp_site { const char *name; unsigned int address, length; const unsigned char *stock, *target; int soft; };\n"
+               "struct cp_site { const char *name; unsigned int address, length; const unsigned char *stock, *target; int soft; const unsigned char *alt; };\n"
                "struct mp_site { unsigned long offset; unsigned int length; const unsigned char *stock, *target; };\n"
                "struct av_guard { const char *name; unsigned long offset; unsigned int length; unsigned char sha256[32]; };\n"
                "struct dump_range { const char *name; unsigned int address, pages; };")
     rows = [f'    {{"{n}", {c_bytes(hashlib.sha256((EX / p).read_bytes()).digest())}}},' for n, p in ID_FILES.items()]
     out.append("static const struct id_file id_files[] = {\n" + "\n".join(rows) + "\n};")
     # ---- coprocessor sites
-    sites = []
+    sites, alt = [], {}
+    for tn in TEST_DESIGNS:                              # the test design's new bytes at the same sites (the same 13 sites and the stored record)
+        td = design(tn)
+        assert td["artifact_sha256"] == sha_cp and td["mode_index"] == og["mode_index"]
+        assert sorted(int(q["addr"], 16) for q in td["patches"]) == sorted(int(q["addr"], 16) for q in og["patches"])
+        for q in td["patches"]:
+            alt[int(q["addr"], 16)] = bytes.fromhex(q["new"])
+        alt[int(td["stored_record"]["address"], 16)] = bytes.fromhex(td["stored_record"]["design"])
     for p in og["patches"]:
         a, old, new = int(p["addr"], 16), bytes.fromhex(p["old"]), bytes.fromhex(p["new"])
         assert cp[a - BASE:a - BASE + len(old)] == old and len(old) == len(new)
@@ -118,7 +137,9 @@ def main():
     rows = []
     for name, a, old, new, soft in sites:
         assert CP_LO <= a and a + len(old) <= CP_HI and len(old) <= 3072
-        rows.append(f'    {{"{name}", {a:#x}, {len(old)}, {blob(old)}, {blob(new) if new is not None else "0"}, {soft}}},')
+        al = alt.get(a) if not name.startswith(("outsize", "screen", "rawbuf")) else None
+        assert al is None or len(al) == len(old)
+        rows.append(f'    {{"{name}", {a:#x}, {len(old)}, {blob(old)}, {blob(new) if new is not None else "0"}, {soft}, {blob(al) if al is not None else "0"}}},')
     out.append("static const struct cp_site cp_sites[] = {\n" + "\n".join(rows) + "\n};")
     # ---- main-processor sites
     lmr, avr, av_hi = [], [], 0
@@ -146,7 +167,7 @@ def main():
     out.append(f"#define AV_LO {av_lo:#x}UL\n#define AV_HI {av_hi:#x}UL")
     # the dump's display pages: every page holding a screen site or guard
     disp_pages = sorted({int(x["ram_address"], 16) & ~0xFFF for x in sc["sites"] + sc["guards"]})
-    dump_ranges = list(DUMP_FIXED) + [(f"display{k}", p, 1) for k, p in enumerate(disp_pages)]
+    dump_ranges = list(DUMP_FIXED) + [(f"display{k}", p, 1) for k, p in enumerate(disp_pages)] + list(DUMP_LAST)
     rows = [f'    {{"{n}", {a:#x}, {k}}},' for n, a, k in dump_ranges]
     assert all(CP_LO <= a and a + 4096 * k <= CP_HI for _, a, k in dump_ranges)
     starts = sorted((a, a + 4096 * k) for _, a, k in dump_ranges)
@@ -179,7 +200,19 @@ def main():
            "screen_design": sc["design"],
            "raw_write_buffer": [{"address": s["ram_address"], "stock": s["old"], "new": s["new"]} for s in dm["sites"]],
            "ram": {"resize_result_a7iv": "0x145091c (FX2 not confirmed; the dump searches 0x190c000.. for known sizes)",
-                   "resize_settings": "0x190ea40", "resize_work": "0x15e4298", "shadow_reg_0x01_a7iv": "0x1033c7e"}}
+                   "resize_settings": "0x190ea40", "resize_work": "0x15e4298", "shadow_reg_0x01_a7iv": "0x1033c7e"},
+           # v2: the test designs' stored-record bytes, and what the PC needs to read the memory manager's workspace without the firmware files
+           "test_designs": {tn: {"stored_record_design": design(tn)["stored_record"]["design"], "title": design(tn)["title"]} for tn in TEST_DESIGNS},
+           "dmm": {"workspace_pointer": "0x192fc28", "units_pointer": "0x192f77c", "workspace_expected": "0x21a5d18", "units_at": 0x107E0,
+                   "workspace_bytes": 0x35230, "objects": 0x580, "object_bytes": 0x50, "handles": 0x3FF, "handle_bytes": 0x40,
+                   "scene_index_at": 0x33410, "scene_stack_at": 0x33418, "group_use_at": 0x33428,
+                   "ids_by_key": {hex(k): [hex(i) for i in v] for k, v in sorted(dcfg.ids_by_key.items())},
+                   "unit_sizes_by_key": {hex(k): sorted({u["size"] for u in v}) for k, v in sorted(dcfg.units_by_key.items())},
+                   "note": "unit objects of 0x50 bytes: +0 index u16, +2 flags u16 (bit 0 divided), +8 base u64, +0x10 offset, +0x14 size, +0x20 parent object, "
+                           "+0x24 key, +0x28 owner handle, +0x30 group it is divided as (build/dmm_dump.py, A7 IV layout; on the FX2 the unit objects' offset "
+                           "+0x107e0 was confirmed by the first test's L13 report)"},
+           "snapshot": {"address": "0x9a21e00", "size": "0x3000000", "tag": "SOLID_SSHOT",
+                        "note": "the coprocessor's snapshot debug image (/cp/tomco.txt); its format is not known: the dump copies its first pages"}}
     assert len(ref["emulated_stock_records"]) == NMODES
     (HERE / "fx2_reference.json").write_text(json.dumps(ref) + "\n", encoding="utf8", newline="\n")
     print(f"fx2_expected.h: {len(sites)} coprocessor sites ({len(sc['sites'])} of the screen, {len(dm['sites'])} of the raw write buffer), "

@@ -30,10 +30,19 @@ IMG_SPAN = 0x2EA000
 FUNCS = {"a7iv_602": {"config": 0x222B18, "stsd": 0x2240CC, "prof": 0x225DB8, "span": 0x2EA000},
          "fx3_702": {"config": 0x21FEC4, "stsd": 0x221464, "prof": 0x223110, "span": 0x2E2000},
          # FX2 1.01 (2026-11-25): the A7 IV's writer moved by -0x37b4 (modding/FX2_PORT_ENCODER.md); first segment 0x2e465c bytes
-         "fx2_101": {"config": 0x21F364, "stsd": 0x220918, "prof": 0x222604, "span": 0x2E5000}}
+         "fx2_101": {"config": 0x21F364, "stsd": 0x220918, "prof": 0x222604, "span": 0x2E5000},
+         # A7C II 2.01 (2026-11-25): the A7 IV's writer moved by -0x390c (build/mp4_meta_sites.py SHIFTED); first segment 0x2e4534 bytes
+         "a7c2_201": {"config": 0x21F20C, "stsd": 0x2207C0, "prof": 0x2224AC, "span": 0x2E5000},
+         # FX30 6.01 (2026-11-26): the FX3's writer 0x2c higher (modding/FX30_PORT_ENCODER.md); first segment 0x2e195c bytes
+         "fx30_601": {"config": 0x21FEF0, "stsd": 0x221490, "prof": 0x22313C, "span": 0x2E2000}}
 # what main_other() writes for each build (the FX3's text is the one its evidence was first written with)
 OTHER = {"fx3_702": {"name": "FX3 7.02", "design": "ogfile2560_hs_s_fx3_v2", "dst": "evidence/fx3/mp4_meta_emu_fx3.json"},
-         "fx2_101": {"name": "FX2 1.01", "design": "ogfile2560_hs_s_fx2_v2", "dst": "evidence/fx2/mp4_meta_emu_fx2.json"}}
+         "fx2_101": {"name": "FX2 1.01", "design": "ogfile2560_hs_s_fx2_v2", "dst": "evidence/fx2/mp4_meta_emu_fx2.json"},
+         "fx30_601": {"name": "FX30 6.01", "design": "ogfile2560_hs_s_fx30_v2", "dst": "evidence/fx30/encoder/mp4_meta_emu_fx30.json"}}
+# A1 II 4.00 (2026-11-26, modding/A1M2_PORT_ENCODER.md): the A7 IV's writer moved by +0x15c4 (build/mp4_meta_sites.py SHIFTED); first segment
+# 0x2e9814 bytes. main_other() checks the 3840x2560 heights against the A7 IV's stock writer.
+FUNCS["a1m2_400"] = {"config": 0x222B18 + 0x15C4, "stsd": 0x2240CC + 0x15C4, "prof": 0x225DB8 + 0x15C4, "span": 0x2EA000}
+OTHER["a1m2_400"] = {"name": "A1 II 4.00", "design": "ogfile2560_hs_s_a1m2_v2", "dst": "evidence/a1m2/encoder/mp4_meta_emu_a1m2.json"}
 OBJ, REQ, OUT, STACK, RET = 0x10000000, 0x10001000, 0x10002000, 0x10100000, 0x10200000
 
 
@@ -204,5 +213,69 @@ def main_other(build):
     print("wrote", dst)
 
 
+def main_c2():
+    """A7C II 2.01: its own writer, stock and with its sites for 3840x2560 and for 5760x3840, beside the A7 IV's stock and design writers on the same
+    requests. Every request the A7C II's stock writer accepts must give the same answer as on the A7 IV, size for size."""
+    build = "a7c2_201"
+    c2 = locate_file.locate(build, "libmpr.so").read_bytes()
+    a4 = locate_file.locate("a7iv_602", "libmpr.so").read_bytes()
+    libs = {"a7iv stock": Lib(a4), "stock": Lib(c2, build)}
+    for w, h in ((3840, 2560), (5760, 3840)):
+        m4, mc = M.sites(w, h), M.sites(w, h, build)
+        M.check(a4, m4)
+        M.check(c2, mc)
+        libs["a7iv %dx%d" % (w, h)] = Lib(patched(a4, m4))
+        libs["%dx%d" % (w, h)] = Lib(patched(c2, mc), build)
+    rows = []
+    for comb in (0, 2, 5, 7):
+        for rate_code in (0, 2):
+            for rate_index in range(2, 0x36):
+                row = {"comb": comb, "codec": "HEVC" if comb in (5, 7) else "AVC", "rate_code": rate_code, "rate_index": rate_index}
+                for name, lib in libs.items():
+                    try:
+                        r, cfg = lib.config(comb, rate_code, rate_index)
+                        rs, sz = lib.stsd(cfg)
+                        rp, pf = lib.prof(cfg)
+                        row[name] = {"config": [struct.unpack_from("<H", cfg, 0x2A)[0], struct.unpack_from("<H", cfg, 0x28)[0]], "stsd": [rs, list(sz)], "prof": [rp, pf]}
+                    except UcError as e:
+                        row[name] = {"error": str(e)}
+                rows.append(row)
+    ok = lambda s: s.get("stsd", [1])[0] == 0 and s.get("prof", [1])[0] == 0
+    for r in rows:
+        for k in ("stock", "3840x2560", "5760x3840"):
+            twin = r["a7iv " + k] if k != "stock" else r["a7iv stock"]
+            assert ok(r[k]) == ok(twin) and (not ok(r[k]) or (r[k]["config"] == twin["config"] and r[k]["stsd"] == twin["stsd"] and r[k]["prof"][1] == twin["prof"][1])), (k, r["comb"], r["rate_index"])
+    real = [r for r in rows if ok(r["stock"])]
+    assert real
+    for r in real:
+        for (w, h) in ((3840, 2560), (5760, 3840)):
+            d = r["%dx%d" % (w, h)]
+            assert d["config"] == [w, h] and d["stsd"] == [0, [w, h]] and d["prof"][0] == 0, (w, r["comb"], r["rate_index"], d)
+            assert d["prof"][1]["profile_id"] == r["stock"]["prof"][1]["profile_id"] and d["prof"][1]["pixel_aspect"] == r["stock"]["prof"][1]["pixel_aspect"]
+            assert [d["prof"][1]["width"], d["prof"][1]["height"]] == [w, h]
+    assert all(not ok(r[k]) for r in rows if not ok(r["stock"]) for k in ("3840x2560", "5760x3840"))
+    summary = {}
+    for r in real:
+        summary.setdefault("comb %d rate code %d" % (r["comb"], r["rate_code"]), []).append(r["rate_index"])
+    out = {"about": "A7C II 2.01 libmpr.so 0x21f20c (track config), 0x2207c0 (stsd entry), 0x2224ac (PROF entry) run in Unicorn: stock, and with "
+                    "build/mp4_meta_sites.py's sites for 3840x2560 and 5760x3840 (the A7 IV's, moved by -0x390c), beside the A7 IV 6.02's stock and "
+                    "design writers. Generated by build/emu_mp4_meta.py --build a7c2_201.",
+           "requests_the_stock_code_accepts": summary,
+           "result": "the A7C II's writer answers every request exactly as the A7 IV's, stock and with each design: config, stsd and PROF say 3840x2560 "
+                     "or 5760x3840 with the stock profile id and pixel aspect; nothing the stock writer refuses is accepted",
+           "rows": real}
+    dst = ROOT / "evidence/a7c2/mp4_meta_emu_c2.json"
+    dst.parent.mkdir(exist_ok=True)
+    dst.write_text(json.dumps(out, indent=1) + "\n", encoding="utf8", newline="\n")
+    ex = real[0]
+    print("%d accepted requests; e.g. comb %d: stock %s, 3840x2560 stsd %s PROF id %s, 5760x3840 stsd %s PROF id %s pixel aspect %s"
+          % (len(real), ex["comb"], ex["stock"]["config"], ex["3840x2560"]["stsd"], ex["3840x2560"]["prof"][1]["profile_id"],
+             ex["5760x3840"]["stsd"], ex["5760x3840"]["prof"][1]["profile_id"], ex["5760x3840"]["prof"][1]["pixel_aspect"]))
+    print("wrote", dst)
+
+
 if __name__ == "__main__":
-    main_other(sys.argv[sys.argv.index("--build") + 1]) if "--build" in sys.argv else main()
+    if "--build" in sys.argv and sys.argv[sys.argv.index("--build") + 1] == "a7c2_201":
+        main_c2()
+    else:
+        main_other(sys.argv[sys.argv.index("--build") + 1]) if "--build" in sys.argv else main()

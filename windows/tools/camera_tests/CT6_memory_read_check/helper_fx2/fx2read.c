@@ -1,5 +1,7 @@
 /*
  * fx2read: READ-ONLY helper for the FX2 (ILME-FX2) firmware 1.01 port of the open-gate state (made from fx3read.c, 2026-11-25).
+ * v2 (2026-11-26, after the first FX2 test): a site may also hold a test design's bytes (`alt`, reported TEST: the diagnostic ladder's
+ * fhband_fx2_v1); the dump also copies the memory manager's workspace and the first pages of the crash snapshot area.
  *
  * NOT RUN ON A CAMERA. It is loaded the way the A7 IV helper is (readcheck.c): the service file-write command
  * writes /tmp/jiritsu/libJit.so and loads it at once; loading runs the constructor below, once.
@@ -384,15 +386,15 @@ static void cp_part(void)
         const struct cp_site *c = &cp_sites[i];
         puts_("site "); puts_(c->name); puts_(" "); putaddr(c->address); puts_(" len "); putnum(c->length);
         if (c->length > sizeof big || !cp_bytes(c->address, big, c->length)) { puts_("  NOT READ\n"); n_other++; continue; }
-        int st = same(big, c->stock, c->length), tg = c->target && same(big, c->target, c->length);
+        int st = same(big, c->stock, c->length), tg = c->target && same(big, c->target, c->length), al = c->alt && same(big, c->alt, c->length);
         if (c->length <= 16) { puts_(" bytes "); puthex(big, c->length); }
         else {
             u32 d = 0;
             for (u32 k = 0; k < c->length; k++) if (big[k] != c->stock[k]) d++;
             puts_(" bytes differing from stock "); putnum(d);
         }
-        puts_(st ? "  STOCK\n" : tg ? "  TARGET\n" : c->soft ? "  OTHER (not counted: filled at run time)\n" : "  OTHER\n");
-        if (!st && !tg) {
+        puts_(st ? "  STOCK\n" : tg ? "  TARGET\n" : al ? "  TEST\n" : c->soft ? "  OTHER (not counted: filled at run time)\n" : "  OTHER\n");
+        if (!st && !tg && !al) {
             if (!c->soft) n_other++;
             if (c->length > 16) { puts_("other "); puts_(c->name); puts_(" "); puthex(big, c->length); puts_("\n"); }
         }
@@ -477,7 +479,7 @@ static void run(void)
     cp_part();
     mp_part();
     puts_("== summary\nplaces not as the 1.01 update or not read: "); putnum(n_other);
-    puts_(n_other ? "\nVERDICT NOT READY\n" : "\nVERDICT READY (every identity check same, every site stock or target)\n");
+    puts_(n_other ? "\nVERDICT NOT READY\n" : "\nVERDICT READY (every identity check same, every site stock, target or a test design)\n");
     puts_("== done\n");
     sys_close((int)fd);
     out_fd = -1;

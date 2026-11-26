@@ -8,6 +8,7 @@ whole page, direction 0, into the allocated buffer is accepted). Cases, for both
   applied      every design site holding its new bytes, the screen step included    -> TARGET everywhere, verdict READY
   no-screen    the open-gate state without the screen step                          -> open-gate TARGET, screen words STOCK, READY
   no-meta      the encoder side without the MP4 header heights (N19)                -> its sites TARGET, the two heights STOCK, READY
+  test1        v2: the diagnostic ladder's test 1 (L13 + fhband_fx2_v1)            -> raw buffer TARGET, records TEST, cells TARGET, READY
   a7c2         the A7C II 2.01 files and coprocessor image (the same platform)      -> identity DIFFERS, verdict NOT READY
   a7iv         the A7 IV 6.02 files and coprocessor image (the same sensor)         -> identity DIFFERS, verdict NOT READY
   fx3          the FX3 7.02 files and coprocessor image                             -> identity DIFFERS, verdict NOT READY
@@ -30,7 +31,7 @@ from unicorn import arm64_const as R  # noqa: E402
 BASE = 0x108000
 FACTS = json.loads((HERE / "fx2_expected.json").read_text(encoding="utf8"))
 DES = ROOT / "modding/designs"
-CP_RANGE = (0xC0000, 0x2700000)                 # the widest of the kits' read ranges: a foreign helper is modelled too
+CP_RANGE = (0xC0000, 0x9B00000)                 # v2 reads the snapshot debug image's first pages (0x9a21000); a foreign helper is modelled too
 
 
 def ex(build, rel):
@@ -87,7 +88,36 @@ class Run(E.Run):
         return self
 
 
-def model(build="fx2_101", applied=False, screen=True, reserve=True, exists=False, enc="ogfile2560_hs_s_fx2_v2"):
+WS, UNITS = 0x21A5D18, 0x21A5D18 + 0x107E0          # the memory manager's workspace and unit objects (the first FX2 test's L13 report)
+
+
+def workspace():
+    """A small model of the workspace after a movie look with L13 applied: a parent 0x6fa divided as group 0x8d with two 33,003,520-byte
+    0x57f units (one held by handle 0, memory id 0x43e), and a left-over 0x6a3 object of an earlier division. Read by fx2_run.py's decoder."""
+    import struct as S
+    ws = bytearray(0x35230)
+    S.pack_into("<II", ws, 0, 0x43E, 7)                              # handle 0: memory id 0x43e, serial 7
+    S.pack_into("<I", ws, 0x10, UNITS + 1 * 0x50)                    # its unit: object 1
+    for h in range(1, 0x3FF):
+        S.pack_into("<I", ws, h * 0x40, 0xFFFFFFFF)
+
+    def obj(i, flags, base, off, size, parent, key, owner, group):
+        o = 0x107E0 + i * 0x50
+        S.pack_into("<HH", ws, o, i, flags)
+        S.pack_into("<Q", ws, o + 8, base)
+        S.pack_into("<II", ws, o + 0x10, off, size)
+        S.pack_into("<III", ws, o + 0x20, parent, key, owner)
+        S.pack_into("<I", ws, o + 0x30, group)
+    obj(0, 1, 0x4A0000000, 0, 73400320, 0, 0x6FA, 0, 0x8D)
+    obj(1, 0, 0x4A0000000, 0, 33003520, UNITS, 0x57F, WS, 0)
+    obj(2, 0, 0x4A0000000, 33003520, 33003520, UNITS, 0x57F, 0, 0)
+    obj(3, 0, 0x4B0000000, 0, 27864320, UNITS + 9 * 0x50, 0x6A3, 0, 0)     # left over: its parent object is not divided now
+    S.pack_into("<H", ws, 0x33410, 0)
+    S.pack_into("<H", ws, 0x33428 + 2 * 0x8D, 1)
+    return bytes(ws)
+
+
+def model(build="fx2_101", applied=False, screen=True, reserve=True, exists=False, enc="ogfile2560_hs_s_fx2_v2", test=None):
     cp = bytearray(ex(build, "nflasha8/cpapp-b.bin"))
     av = bytearray(ex(build, "nflasha3/av-cam.bin"))
     libs = {n: ex(build, "nflasha15/lib" + n) for n in ("/libmpr.so", "/libsencore.so", "/libJiritsu.so")}
@@ -102,7 +132,16 @@ def model(build="fx2_101", applied=False, screen=True, reserve=True, exists=Fals
         for s in oz["sites"]:
             ram[int(s["ram_address"], 16)] = bytes.fromhex(s["new" if applied else "old"])
         for s in dm["sites"]:                     # the memory manager's RAM copy of DmmCfg.bin
-            ram[int(s["ram_address"], 16)] = bytes.fromhex(s["new" if applied else "old"])
+            ram[int(s["ram_address"], 16)] = bytes.fromhex(s["new" if applied or test else "old"])
+        ram[0x192FC28] = struct.pack("<I", WS)    # the page of pointers: workspace and unit objects
+        ram[0x192F77C] = struct.pack("<I", UNITS)
+        ram[WS] = workspace()
+        if test:                                  # a test design at the sensor sites and in the stored record
+            td = design(test)
+            ram[int(td["stored_record"]["address"], 16)] = bytes.fromhex(td["stored_record"]["design"])
+            for q in td["patches"]:
+                a, new = int(q["addr"], 16), bytes.fromhex(q["new"])
+                cp[a - BASE:a - BASE + len(new)] = new
     if applied:
         for p in og["patches"]:
             a, new = int(p["addr"], 16), bytes.fromhex(p["new"])
@@ -149,6 +188,7 @@ def main():
         for case, kw, want in (("stock", {}, ("VERDICT READY", "STOCK")), ("applied", {"applied": True}, ("VERDICT READY", "TARGET")),
                                ("no-screen", {"applied": True, "screen": False}, ("VERDICT READY", "TARGET")),
                                ("no-meta", {"applied": True, "enc": "ogfile2560_hs_s_fx2_v1"}, ("VERDICT READY", "TARGET")),
+                               ("test1", {"test": "fhband_fx2_v1"}, ("VERDICT READY", "  TEST")),
                                ("a7c2", {"build": "a7c2_201"}, ("VERDICT NOT READY", "DIFFERS from the 1.01 update")),
                                ("a7iv", {"build": "a7iv_602"}, ("VERDICT NOT READY", "DIFFERS from the 1.01 update")),
                                ("fx3", {"build": "fx3_702"}, ("VERDICT NOT READY", "DIFFERS from the 1.01 update")),
@@ -180,10 +220,15 @@ def main():
                     lm = [ln for ln in text.split("\n") if ln.startswith("lm ")]
                     if sum(ln.endswith("TARGET") for ln in lm) != 4 or sum(ln.endswith("STOCK") for ln in lm) != 2:
                         problems.append("no-meta: libmpr lines %s" % lm)
-                if case in ("stock", "applied"):           # the raw write buffer's four words are hard sites
+                if case in ("stock", "applied", "test1"):  # the raw write buffer's four words are hard sites
                     rb = [ln for ln in text.split("\n") if ln.startswith("site rawbuf_")]
-                    if len(rb) != 4 or not all(ln.endswith("  " + ("TARGET" if case == "applied" else "STOCK")) for ln in rb):
+                    if len(rb) != 4 or not all(ln.endswith("  " + ("STOCK" if case == "stock" else "TARGET")) for ln in rb):
                         problems.append("raw write buffer words: %s" % rb)
+                if case == "test1":                        # the 13 sensor sites and the stored record hold the test design
+                    tl = [ln for ln in text.split("\n") if ln.startswith("site ") and ln.endswith("  TEST")]
+                    tg = [ln for ln in text.split("\n") if ln.startswith("site S") and ln.endswith("  TARGET")]
+                    if len(tl) != 3 or len(tg) != 11:      # the records and the stored record differ from the squeeze design; the 11 cells are the same
+                        problems.append("test1: %d sites TEST (want 3), %d cells TARGET (want 11)" % (len(tl), len(tg)))
                 if which == "dump" and case == "stock" and text.count("cppage ") != sum(k for _, _, k in FACTS["dump_ranges"]):
                     problems.append("dump pages: %d" % text.count("cppage "))
             n_tr = sum(1 for c in r.lib_calls if c[0] == "transfer")

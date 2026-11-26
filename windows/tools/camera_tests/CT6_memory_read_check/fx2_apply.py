@@ -3,6 +3,7 @@
   python fx2_apply.py apply    [--no-screen] [--no-meta] [--dry-run] [--no-movie-session]
   python fx2_apply.py putback  [--no-screen] [--dry-run]
   python fx2_apply.py screen | screen-putback  [--dry-run]
+  python fx2_apply.py test1 | test2  [--dry-run]       (second kit, 2026-11-26: the diagnostic ladder)
 
 The FX2 counterpart of fx3_apply.py (the FX3 kit, which records open gate on two FX3s). The FX2 is the A7 IV's sensor (IMX710 class)
 on the A7C II's platform, so its open-gate steps are the A7 IV kit's (its default state since 2026-11-18, true 3840x2560 files of the
@@ -16,6 +17,14 @@ checked against the FX2's own code in emulation. NOTHING OF THIS KIT HAS RUN ON 
            A step that finds its bytes already applied says NOTHING TO DO and counts as passed.
   putback  the reverse: S17, L20, L17, L6, L14 (with --no-screen the last four). A cold boot (battery out for 10 seconds) also undoes everything.
   screen / screen-putback   only the screen step (S16) or its put back (S17).
+  test1    SECOND KIT (2026-11-26), after the first FX2 test: every step applied, but entering MOVIE ended in the coprocessor's forced
+           exception "FW: S-Ele Refresh ng force exception" (0x507da0: a stage still busy for 11 frames, the A7 IV's F662 signature) and a
+           restart. Test 1 = L13 + B5 (fhband_fx2_v1, the A7 IV's fhband_v1, F658): the sensor in the same full-height mode as L5, but the
+           stage keeps its stock 16:9 height. Then one read-only dump on MOVIE (sensor mode, the memory manager's workspace: which write
+           buffer was opened, and at what size).
+  test2    L13 + L5 only (the A7 IV's two-step squeezed baseline, F682): the 4,688-row stage, no output-size, encoder or screen step. Then
+           one read-only dump on MOVIE, or, if the camera restarts, after the restart (the kprint record and the snapshot image's head).
+           Tests start from a cold boot on STILL. To undo: battery out for 10 seconds.
 
 There is no preview-key routine in this kit: the FX2's own De-Squeeze Display (Off, 1.3x, 2.0x on 1.01) is kept, and S16 sets its ratios
 for the 3:2 picture.
@@ -45,7 +54,9 @@ import ct1_common as c  # noqa: E402
 import fx2_run  # noqa: E402
 
 FIRMWARE = fx2_run.FIRMWARE
-STEPS = {"apply": ("L13", "L5", "L16", "L19"), "putback": ("L20", "L17", "L6", "L14"), "screen": ("S16",), "screen-putback": ("S17",)}
+STEPS = {"apply": ("L13", "L5", "L16", "L19"), "putback": ("L20", "L17", "L6", "L14"), "screen": ("S16",), "screen-putback": ("S17",),
+         "test1": ("L13", "B5"), "test2": ("L13", "L5")}
+TESTS = ("test1", "test2")
 RUNNER = HERE / "fx2_run.py"
 LISTER = HERE.parent / "CT1_usb_first_contact" / "ct1_stage2_service.py"
 STILL = "STILL (the Still/Movie switch on STILL)"
@@ -77,7 +88,7 @@ def last_check():
         res = man.get("results", {})
         f = (res.get("ct6", {}).get("result") or {}).get("s3")
         if res.get("which") in ("check", "dump") and f:       # a dump makes every check the check makes, and gives the same verdict
-            current = "fx2read_v1 " in f.get("header", "") and "ILME-FX2 1.01" in f.get("header", "")
+            current = any(v in f.get("header", "") for v in ("fx2read_v1 ", "fx2read_v2 ")) and "ILME-FX2 1.01" in f.get("header", "")
             return folder.name, current and bool(f.get("ready")) and not f.get("identity_differs")
     return None
 
@@ -133,15 +144,20 @@ def wait_for_replug(timeout=900):
     return True
 
 
-def movie_session():
+def movie_session(test=None):
     """The closing read-only session, taken in movie mode: it shows the sensor in the open-gate mode and the panel type."""
     say()
     say("=" * 78)
-    say("One more session, and it only READS: it records the sensor's state in Movie and the rear panel's type for the first FX2 results.")
+    say("One more session, and it only READS: it records the sensor's state in Movie, the memory manager's state and the rear panel's type.")
     say(">>> 1. Unplug the USB cable.")
     say(">>> 2. Set %s." % MOVIE)
-    say("       Look at the rear screen for five seconds and remember what it shows (the whole 3:2 picture? anything wrong?).")
-    say(">>> 3. Plug the USB cable in again, still on MOVIE.")
+    if test:
+        say("       Watch the rear screen for ten seconds. Write down: a picture? purple flashing? does the camera switch itself off and on?")
+        say("       If there is a steady picture: press REC, record about five seconds, press REC again.")
+        say("       If the camera restarts by itself: do NOT pull the battery. Wait until it is on again, leave the switch on MOVIE.")
+    else:
+        say("       Look at the rear screen for five seconds and remember what it shows (the whole 3:2 picture? anything wrong?).")
+    say(">>> 3. Plug the USB cable in again, still on MOVIE (after a restart too; choose Mass Storage if the camera asks).")
     say(">>> Do NOT switch the camera off: that may remove the patch.")
     say("Waiting for the unplug and the replug (Ctrl+C to stop; the patch stays applied either way) ...")
     if not wait_for_replug():
@@ -193,8 +209,8 @@ def main():
     with_screen = not a.no_screen
     if a.what in ("apply", "putback") and with_screen:
         steps = steps + STEPS["screen"] if a.what == "apply" else STEPS["screen-putback"] + steps
-    applying = a.what in ("apply", "screen")
-    closing = a.what in ("apply", "screen")
+    applying = a.what in ("apply", "screen") + TESTS
+    closing = a.what in ("apply", "screen") + TESTS
     for k in steps:                                  # every library must be the pinned one before anything starts
         name, sha, _ = fx2_run.WRITE_STEPS[k]
         p = fx2_run.S3 / name
@@ -220,14 +236,19 @@ def main():
                          % ("does not exist" if chk is None else "(%s) does not say READY" % chk[0]))
     say()
     say("This WRITES into the running camera's memory (not its firmware, not its settings).")
-    if applying:
-        say("NOTHING OF THIS KIT HAS RUN ON AN FX2 YET. The same steps work on an A7 IV (the FX2's sensor); every FX2 site was checked")
-        say("  against the FX2's own files and code in emulation, and each step writes nothing unless its bytes are exactly the FX2 1.01 stock bytes.")
+    if a.what in TESTS:
+        say("This is %s of the diagnostic ladder (second kit). On the first FX2 test the whole apply worked, but MOVIE ended in a forced" % a.what)
+        say("  exception and a restart. This test applies only %s, so that the result says which part the FX2 does not take." % " + ".join(steps))
+        say("  A restart is possible and harmless (the patch is gone after it). Each step writes nothing unless its bytes are exactly the stock bytes.")
+    elif applying:
+        say("On the first FX2 test (2026-11-25) every step applied, but entering MOVIE ended in a forced exception and a restart to stock.")
+        say("  If you have not run test1 and test2 yet, please run those first (test1_fullheight_band, test2_squeeze_only).")
+        say("  Each step writes nothing unless its bytes are exactly the FX2 1.01 stock bytes.")
     else:
         say("It has to follow an apply of this kit.")
     say("A cold boot (battery out for 10 seconds) returns the camera to stock. Whether the power switch alone does on the FX2 is not known:")
     say("so KEEP THE CAMERA SWITCHED ON from now until the script says it is finished.")
-    if a.what == "apply":
+    if a.what == "apply" or a.what in TESTS:
         say("Before you go on: the switch on %s, a charged battery," % STILL)
         say("and a camera that was cold booted and has not been on MOVIE or S&Q since. (If it starts on MOVIE: set the switch to STILL,")
         say("pull the battery for 10 seconds, put it back and switch on.) Step L13 changes the memory manager and needs that state.")
@@ -275,6 +296,16 @@ def main():
         say("  the stock centre crop is off). The file does not change. While it is applied every 16:9 picture is shown stretched to 3:2")
         say("  (other movie formats look wrong on the rear screen). Please report: the screen with De-Squeeze Display Off, 1.3x and 2.0x,")
         say("  and whether the focus and tracking frames sit on the subject.")
+    if a.what in TESTS:
+        if a.no_movie_session:
+            say(">>> Unplug USB, set %s, then run dump_info on MOVIE (after a restart too)." % MOVIE)
+        else:
+            movie_session(a.what)
+        say()
+        say("Please send the newest folders in camera_private, and what the screen did on MOVIE: a picture (which shape?), purple flashing,")
+        say("  a restart? If it recorded: the clip's properties (size, frame rate), or the clip. To return to stock: battery out for 10 seconds.")
+        say("  Before the next test: battery out for 10 seconds, switch on with the switch on STILL.")
+        return
     if closing:
         if a.no_movie_session:
             say(">>> Unplug USB, then set %s." % MOVIE)

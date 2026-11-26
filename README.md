@@ -1,10 +1,17 @@
 # FX2 open gate: test kit (firmware 1.01)
 
-<p><b>Not yet run on any FX2.</b> This kit ports the open gate that works on the A7 IV to the Sony FX2 (ILME-FX2) firmware 1.01. It records a true 3840 × 2560 picture of the whole 3:2 sensor area at 23.98p and makes the MP4 headers say 3840 × 2560. It also fills the FX2's 3:2 rear screen with the whole picture, and sets the FX2's own De-Squeeze Display for it. The patch only writes to the camera's memory.</p>
+<p><b>Second kit (2026-11-26): diagnostic tests.</b> On the first FX2 test (issue #1) every step applied, but switching to MOVIE crashed the image processor and the camera restarted to stock. Please run <code>test1_fullheight_band</code>, then <code>test2_squeeze_only</code> (see "The diagnostic tests"), and send the folders. This kit ports the open gate that works on the A7 IV to the Sony FX2 (ILME-FX2) firmware 1.01. It records a true 3840 × 2560 picture of the whole 3:2 sensor area at 23.98p and makes the MP4 headers say 3840 × 2560. It also fills the FX2's 3:2 rear screen with the whole picture, and sets the FX2's own De-Squeeze Display for it. The patch only writes to the camera's memory.</p>
 
-**Where it stands (2026-11-25):**
+**Where it stands (2026-11-26):**
 
-- **Built and emulated, not run.** Every step was checked against the FX2 1.01 firmware's own files and code (Unicorn), and every library was run against a model FX2 (`PORT_NOTES.md`). The first FX2 owner to run it is the first test.
+- **First FX2 test (2026-11-25, issue #1).** Every step applied and read back on the camera: raw buffer, sensor, output size, encoder and screen. The USB route, the read-only checks and the macOS launchers all work on the FX2.
+  - **The failure.** Entering MOVIE gave a purple flash, then the image processor stopped itself and the camera restarted, with the patch gone. This happened four times, also without the screen step.
+  - **What the crash record says.** The code at 0x507da0 prints "FW: S-Ele Refresh ng force exception" and stops on purpose when a stage of the picture pipeline is still busy after 11 frames. That is exactly what the A7 IV did before its raw write buffer was enlarged (its F662/F667). This kit's first step enlarges that buffer, so something else on the FX2 is still in the way. We cannot tell what from the record.
+  - **Read on the camera:** rear panel type 3 (3:2), viewfinder type 2 (4:3).
+- **Second kit: two diagnostic tests.** Each applies part of the kit and then reads the camera's state on MOVIE (see "The diagnostic tests").
+  - The read-only dump also reads the image processor's memory manager (which write buffer it opened, and at what size), and the first pages of the image it saves when it crashes.
+  - The full apply is unchanged; please run the tests first.
+- **Built and emulated.** Every step was checked against the FX2 1.01 firmware's own files and code (Unicorn), and every library was run against a model FX2 (`PORT_NOTES.md`).
 - **Why it should work.** The FX2 has the A7 IV's sensor:
   - the same video modes (plus two the A7 IV lacks);
   - the same sensor tables and register matrix;
@@ -28,6 +35,8 @@
 | `open_gate_apply_no_meta.cmd` | The default state with the encoder step that leaves the MP4 headers at 3840 × 2160 | **Yes: memory only** |
 | `open_gate_putback.cmd` | Puts the five steps back | Yes: memory only |
 | `screen_putback.cmd` | Puts the screen step back | Yes: memory only |
+| `test1_fullheight_band.cmd` | **Diagnostic test 1** (second kit): raw write buffer + full-height sensor read-out with the stock 16:9 picture, then one read-only dump on MOVIE | **Yes: memory only** |
+| `test2_squeeze_only.cmd` | **Diagnostic test 2** (second kit): raw write buffer + the full-height sensor step only, then one read-only dump on MOVIE | **Yes: memory only** |
 
 Nothing in this kit writes to the camera's firmware or to its settings.
 
@@ -44,13 +53,13 @@ Nothing in this kit writes to the camera's firmware or to its settings.
 2. Run `windows/setup.cmd`.
 3. Install the libusb-win32 driver for the camera with [Zadig](https://zadig.akeo.ie): Options, List All Devices, pick the camera, choose libusb-win32, Replace Driver. The first run switches the camera to service mode, where it shows up as a new device (054C:0336 on the other bodies): install the driver for that one too, then run the step again.
 
-## macOS, once (not run with an FX2 yet)
+## macOS, once (ran with an FX2 on 2026-11-25)
 
 The macOS kit is the A7 IV kit's macOS port, carried over unchanged apart from the launcher names. It runs the same scripts as Windows (`windows/tools`).
 
 1. Python 3.9 or later: the one macOS offers with the Xcode Command Line Tools (run `xcode-select --install` in Terminal) works, or install it from python.org.
 2. Double-click `macos/setup.command`. It sets up Python and the USB library the scripts use. No Homebrew and no driver are needed.
-3. Each Windows launcher has a macOS twin with the same name: `macos/check_readonly.command`, `dump_info.command`, `open_gate_apply.command`, `open_gate_apply_no_screen.command`, `open_gate_apply_no_meta.command`, `open_gate_putback.command`, `screen_putback.command`. Everything below that says `.cmd` works the same with the `.command` file.
+3. Each Windows launcher has a macOS twin with the same name: `macos/check_readonly.command`, `dump_info.command`, `open_gate_apply.command`, `open_gate_apply_no_screen.command`, `open_gate_apply_no_meta.command`, `open_gate_putback.command`, `screen_putback.command`, `test1_fullheight_band.command`, `test2_squeeze_only.command`. Everything below that says `.cmd` works the same with the `.command` file. (The first FX2 tester ran the macOS launchers: they work.)
 
 Each live run asks for your Mac password: macOS keeps its own driver on the camera's USB connection, and only an administrator can hand the camera over to the script. The script unmounts the camera's memory card first; it does not erase anything on it. The results go to the same `windows/camera_private` folder.
 
@@ -68,6 +77,8 @@ If macOS refuses to open a .command file ("unidentified developer" or "could not
 6. **Stop waiting** ends a wait for the camera. It never interrupts a step that is talking to the camera.
 7. Afterwards, **Export logs** writes a zip to `Download/FX2-OpenGate/` on the phone: send that zip back.
 
+**Test 1: band** and **Test 2: squeeze** run the two diagnostic tests (app 0.2); like the apply, they start only after a check on this phone said READY.
+
 **Self-test** and **Dry run** need no camera and send nothing.
 
 ## The read-only steps
@@ -78,6 +89,30 @@ Each launcher asks for the firmware version the menu shows. Each run makes a new
 - **Dump of the 4K state:** set File Format XAVC S 4K (or XAVC HS 4K) at 24p, S&Q off, APS-C/Super 35 off. Set MOVIE, record a few seconds, stop. **Stay on MOVIE**, connect, run `dump_info.cmd`.
 
 What they do to the camera: they switch it to service mode, write one small program file to the service partition, which the camera loads once, and delete that file again in the same session. The program only reads and creates one file, its report, on the camera's RAM disk. Its source is `windows/tools/camera_tests/CT6_memory_read_check/helper_fx2/fx2read.c`.
+
+## The diagnostic tests (second kit)
+
+The first test showed that the whole kit applies but the FX2 cannot run the result. These two tests split it, as was done on the A7 IV. Run them in this order, each from a cold boot.
+
+| Test | Launcher | What it applies | The A7 IV did | If the FX2 runs it | If the FX2 crashes |
+|---|---|---|---|---|---|
+| 1 | `test1_fullheight_band.cmd` | raw write buffer; the sensor in the same full-height mode as the full kit, but the picture keeps the stock 16:9 band (so the pipeline's stage keeps its stock height) | a normal 16:9 picture and clip (F658) | the full-height read-out works; the dump shows which write buffer the camera opened, and its size | the FX2 does not take the sensor's full-height mode itself |
+| 2 | `test2_squeeze_only.cmd` | raw write buffer + the full kit's sensor step, nothing else (no output size, encoder or screen step) | a squeezed 16:9 picture of the whole sensor height (F682) | the problem is in the output-size or encoder step | the problem is in the taller stage (4,688 rows) |
+
+**How to run each test**
+
+1. Set File Format XAVC S 4K (or XAVC HS 4K) at 24p, APS-C/Super 35 off, S&Q off, Proxy off, De-Squeeze Display off.
+2. Set the switch to STILL, pull the battery for 10 seconds, put it back and switch on. Do not go to MOVIE yet.
+3. Connect USB (Mass Storage) and run `windows/check_readonly.cmd`: VERDICT READY.
+4. Run the test's launcher. It asks for the firmware version and a typed YES, and runs two steps with a replug between them.
+5. When it asks: **unplug, set MOVIE, watch the rear screen for ten seconds.**
+   - **If there is a steady picture:** press REC, record about five seconds, stop.
+   - **If the camera restarts by itself:** do not pull the battery; wait until it is on again and leave the switch on MOVIE.
+6. **Plug in again** (choose Mass Storage if asked). The script runs the read-only dump by itself.
+7. Write down what the screen did: a picture (its shape?), purple flashing, a restart?
+8. Battery out for 10 seconds before the next test.
+
+**Please send** the zipped `windows/camera_private` folder and, for each test, what the screen did. If a test recorded, add the clip or its properties.
 
 ## The write steps
 
@@ -108,7 +143,7 @@ It changes only the preview, not the recorded file. The firmware also has 1.65x 
 - **The vertical squeeze.** On the A7 IV, step 2 tells the scaler that the full-height picture is squeezed by 32/27, so it keeps the whole window. The FX2's scaler calculation is a newer revision of that code and was not run alone in emulation. If it does not act the same way, the file shows a 16:9 cut of the full-height picture instead of all of it. It would not crash.
 - **The raw write buffer step** refuses while the movie memory is laid out the stock way. On the A7 IV it never is, after a cold boot with the camera on stills. The FX2 should be the same.
 - **The power switch.** On the A7 IV switching off and on keeps the patch; on the A7S III it removes it. Not known on the FX2: keep it switched on during the apply.
-- **The rear panel** is expected to be 3:2 (Sony gives 1,036,800 dots = 720 × 480). The closing dump reads its type.
+- **The rear panel** is 3:2: the first test's dump read type 3 (viewfinder: type 2, 4:3).
 - **Exposure, autofocus, long recordings, heat:** the sensor reads 18% more rows per frame.
 
 **While it is applied**

@@ -127,7 +127,7 @@ def build(src, mode, name):
     s_rec, d_rec = bytearray(stock[mode][1]), bytearray(des[mode][1])
     assert stock[mode][2] is None and des[mode][2] is None
     assert any(stock[m][1] != des[m][1] for m in (mode,)), "the S cells do not reach the stored record"
-    for x in d["stored_record_extra"]:
+    for x in d.get("stored_record_extra", []):
         o = int(x["offset"], 16)
         assert s_rec[o] == int(x["old"], 16) and d_rec[o] == int(x["old"], 16)
         d_rec[o] = int(x["new"], 16)
@@ -168,5 +168,7 @@ def build(src, mode, name):
 
 
 if __name__ == "__main__":
-    for src, mode, name in (("ogsq_v3", 0x8C0, "ogsq_fx2_v1"), ("ogsq880_v1", 0x880, "ogsq880_fx2_v1")):
+    # fhband_fx2_v1 (2026-11-26, after the first FX2 test crashed on movie entry): the A7 IV's fhband_v1 (F658: full-height read-out, the stock
+    # 16:9 band kept, stage height stock), the second kit's test 1. It needs no stored_record_extra.
+    for src, mode, name in (("ogsq_v3", 0x8C0, "ogsq_fx2_v1"), ("ogsq880_v1", 0x880, "ogsq880_fx2_v1"), ("fhband_v1", 0x8C0, "fhband_fx2_v1")):
         build(src, mode, name)

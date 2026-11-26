@@ -106,8 +106,8 @@
 #ifndef LEVEL
 #define LEVEL 1
 #endif
-#if LEVEL < 1 || LEVEL > 30 || LEVEL == 11
-#error "LEVEL must be 1 to 10, or 12 to 30"
+#if LEVEL < 1 || LEVEL > 31 || LEVEL == 11
+#error "LEVEL must be 1 to 10, or 12 to 31"
 #endif
 #if LEVEL >= 3 && defined(HOST_TEST)
 #error "levels 3 to 8 have no PC build: they call three functions of the camera's libsencore.so (see emu_built.py)"
@@ -137,7 +137,11 @@
 
 #define FILE_CAP   (64 * 1024)             /* at most this much of any one file is copied */
 #define MAPS_CAP   (512 * 1024)            /* except the list of mappings: 64 KB cut it short on the camera (F509) */
+#if LEVEL == 31
+#define TOTAL_CAP  (2 * 1024 * 1024)       /* level 31 only: level 1's part plus at most 1.5 MB of spans (GET_FILE2's first transfer tier is 5 MB) */
+#else
 #define TOTAL_CAP  (1024 * 1024)           /* at most this much is written in all */
+#endif
 #define DIR_ENTRIES_CAP 64
 
 typedef unsigned char u8;
@@ -198,7 +202,7 @@ static i64 sys_write(int fd, const void *b, u64 n) { return sc(NR_write, fd, (i6
 static i64 sys_close(int fd) { return sc(NR_close, fd, 0, 0, 0, 0, 0); }
 static i64 sys_getdents64(int fd, void *b, u64 n) { return sc(NR_getdents64, fd, (i64)b, (i64)n, 0, 0, 0); }
 static i64 sys_geteuid(void) { return sc(NR_geteuid, 0, 0, 0, 0, 0, 0); }
-#if LEVEL == 2 || LEVEL == 3 || (LEVEL >= 7 && LEVEL <= 12) || LEVEL == 15 || LEVEL == 18 || (LEVEL >= 21 && LEVEL <= 28)  /* a level 1 build contains no mapping call at all */
+#if LEVEL == 2 || LEVEL == 3 || (LEVEL >= 7 && LEVEL <= 12) || LEVEL == 15 || LEVEL == 18 || (LEVEL >= 21 && LEVEL <= 28) || LEVEL == 31  /* a level 1 build contains no mapping call at all */
 static i64 sys_mmap_ro(int fd, u64 len, u64 off)
 {
     i64 r = sc(NR_mmap, 0, (i64)len, 1 /* PROT_READ */, 1 /* MAP_SHARED */, fd, (i64)off);
@@ -603,7 +607,11 @@ extern u32 sen_dma_transfer(u32 dir, u64 src, u64 dst, u32 size);   /* dir 0: co
 #define RAM_LO 0x400000000UL
 #define RAM_HI 0x500000000UL
 #define N_TABLE (sizeof cp_sites / sizeof cp_sites[0])
+#ifdef MULTI_REC                           /* the FX30 kit (helper_fx30): N_RECS stored records (rec_modes), each in REC_VARIANTS timing variants */
+#define N_SITES (N_TABLE + N_RECS)
+#else
 #define N_SITES (N_TABLE + 1)              /* the table's sites, then the stored record */
+#endif
 #define CP_LO 0x108000UL                   /* pointers read from coprocessor memory must lie between these, or nothing is written */
 #define CP_HI 0x10000000UL
 #ifndef IMAGER                             /* another build of the camera software names its own (-DIMAGER=, -DCTRL_DRVPARAM=): helper_s3/build_s3_write.sh */
@@ -633,8 +641,14 @@ extern u32 sen_dma_transfer(u32 dir, u64 src, u64 dst, u32 size);   /* dir 0: co
 
 static u64 l5_phys;
 static u8 *l5_buf;
+#ifdef MULTI_REC
+static struct cp_site l5_recs[N_RECS];     /* the sites after the table's, filled in once the records have been found */
+static u32 l5_variant;                     /* the timing variant all records hold (index into rec_stock / rec_new) */
+static const struct cp_site *site_at(u64 i) { return i < N_TABLE ? &cp_sites[i] : &l5_recs[i - N_TABLE]; }
+#else
 static struct cp_site l5_rec;              /* the 14th site, filled in once the record has been found */
 static const struct cp_site *site_at(u64 i) { return i < N_TABLE ? &cp_sites[i] : &l5_rec; }
+#endif
 
 /* Every transfer is of whole 64-byte lines: the lines a site lies in, at most 4,096 bytes (the generator checks). */
 static u64 line_base(const struct cp_site *s) { return s->address & ~63UL; }
@@ -672,6 +686,44 @@ static const u8 *chain_read(u64 addr, u32 len)
 }
 static u32 le32(const u8 *p) { return (u32)p[0] | (u32)p[1] << 8 | (u32)p[2] << 16 | (u32)p[3] << 24; }
 static int bad_pointer(u32 v) { return (v & 3) || v < CP_LO || v >= CP_HI; }
+#ifdef MULTI_REC
+/* Find the stored record of each mode in rec_modes through the same chain and fill l5_recs; then the timing variant (the camera computes
+   the records at start-up from its 60 Hz or 50 Hz table) whose stock or new bytes every record holds. 0 on success; 1: a record was not
+   found; 2: not exactly one variant fits every record. Only reads. */
+static int find_record(void)
+{
+    const u8 *p = chain_read(IMAGER, 4);
+    if (!p) return 1;
+    u32 ctrl = le32(p);
+    if (bad_pointer(ctrl) || !(p = chain_read((u64)ctrl + CTRL_DRVPARAM, 4))) return 1;
+    u32 obj = le32(p);
+    if (bad_pointer(obj) || !(p = chain_read(obj, 0x18))) return 1;
+    u32 count = le32(p + 4), ids = le32(p + 8), base = le32(p + 0x10);
+    if (count == 0 || count > 64 || bad_pointer(ids) || bad_pointer(base) || !(p = chain_read(ids, count * 4))) return 1;
+    for (u32 r = 0; r < N_RECS; r++) {
+        u32 index = 0xff;
+        for (u32 i = 0; i < count; i++) if (le32(p + 4 * i) == rec_modes[r] && index == 0xff) index = i;
+        if (index == 0xff) return 1;
+        l5_recs[r].address = (u64)base + index * REC;
+        l5_recs[r].length = REC;
+        l5_recs[r].offs = rec_offs; l5_recs[r].noffs = REC_BYTES;
+        if (l5_recs[r].address + REC > CP_HI) return 1;
+    }
+    u32 fits = 0, which = 0;
+    for (u32 v = 0; v < REC_VARIANTS; v++) {
+        int all = 1;
+        for (u32 r = 0; r < N_RECS && all; r++) {
+            if (site_read(&l5_recs[r])) return 1;
+            if (!site_holds(&l5_recs[r], rec_stock[r][v]) && !site_holds(&l5_recs[r], rec_new[r][v])) all = 0;
+        }
+        if (all) { fits++; which = v; }
+    }
+    if (fits != 1) return 2;
+    l5_variant = which;
+    for (u32 r = 0; r < N_RECS; r++) { l5_recs[r].stock = rec_stock[r][which]; l5_recs[r].changed = rec_new[r][which]; }
+    return 0;
+}
+#else
 /* Find the stored record of MODE_ID and fill l5_rec. 0 on success. */
 static int find_record(void)
 {
@@ -692,6 +744,7 @@ static int find_record(void)
     l5_rec.offs = rec_offs; l5_rec.noffs = REC_BYTES;
     return l5_rec.address + REC > CP_HI;
 }
+#endif
 static void say_site(const char *what, const struct cp_site *s)
 {
     u8 a[4] = { (u8)(s->address >> 24), (u8)(s->address >> 16), (u8)(s->address >> 8), (u8)s->address };
@@ -720,8 +773,16 @@ static void level5(void)
     if (m == -1) { puts_("!! mmap of the buffer failed; nothing is written\n"); sys_close((int)fd); cam_dmm_free(handle); return; }
     l5_buf = (u8 *)m + lead;
 
+#ifdef MULTI_REC
+    int found = find_record();
+    if (found == 1) { puts_("!! a stored record was not found where the pointers lead; nothing is written\n"); goto out; }
+    if (found == 2) { puts_("!! the stored records hold neither timing variant (" REC_VARIANTS_TEXT ") throughout; nothing is written\n"); goto out; }
+    for (u32 r = 0; r < N_RECS; r++) { say_site("stored record", &l5_recs[r]); puts_("mode "); puts_(rec_mode_text[r]); puts_("\n"); }
+    puts_("the stored records are the "); puts_(rec_variant_name[l5_variant]); puts_(" variant; " REC_BYTES_TEXT " bytes of each are a site\n");
+#else
     if (find_record()) { puts_("!! the stored record was not found where the pointers lead; nothing is written\n"); goto out; }
     say_site("stored record of mode " MODE_TEXT " at", &l5_rec); puts_(REC_BYTES_TEXT " of its bytes are a site\n");
+#endif
     puts_("pass 1: read every site; nothing is written unless all are as expected\n");
     u32 todo = 0;
     for (u64 i = 0; i < N_SITES; i++) {
@@ -2882,6 +2943,72 @@ static void level24(void)
 #endif
 #endif
 
+/* ------------------------------------------------------------------ level 31: spans of DRAM (a picture buffer), read-only */
+
+/* After a recording the encoder's per-picture buffers (the codec's 'original0' pictures, in DMM blocks of DRAM) still hold the last
+ * pictures until something else uses that memory. This level copies fixed spans of them out, nothing else: the span table comes from
+ * a design (gen_expected.py --dump <name>, which checks each span against the main processor's DmmCfg). Every span is checked before
+ * anything is read: 64-byte aligned, inside DRAM 0x400000000-0x4ffffffff, at most 256 KB, at most 1.5 MB in all; otherwise nothing is
+ * read. /dev/mem is opened read-only with O_SYNC as levels 22 and 26 open it, so a mapping is uncached (or device memory where the
+ * kernel has no linear map); each span is copied with aligned 64-bit loads into a 4 KB buffer of this file, and only that buffer is
+ * written out, so the kernel never copies from the mapping itself. No codec register, no write mapping, no other file. */
+#if LEVEL == 31
+#ifndef DUMP_H
+#error "level 31 needs -DDUMP_H=\"expected_dump_<name>.h\" (gen_expected.py --dump <name>)"
+#endif
+#include DUMP_H                            /* DUMP_DESIGN, struct dump_span { u64 phys; u32 len; u32 block; const char *what; }, dump_spans[] */
+#define D_SYNC     (0 | 0x101000)          /* O_RDONLY | O_SYNC */
+#define D_DRAM_LO  0x400000000UL
+#define D_DRAM_HI  0x500000000UL
+#define D_SPAN_MAX 0x40000UL               /* 256 KB a span */
+#define D_ALL_MAX  0x180000UL              /* 1.5 MB in all */
+#define D_N (sizeof dump_spans / sizeof dump_spans[0])
+_Static_assert(D_N >= 1 && D_N <= 64, "a short span table");
+
+static u64 d_buf[512];                     /* 4 KB */
+
+static void d_x64(u64 v) { u8 b[8]; for (int i = 0; i < 8; i++) b[i] = (u8)(v >> (8 * (7 - i))); puts_("0x"); puthex(b, 8); }
+
+static void level31(void)
+{
+    puts_("== level 31: spans of DRAM, read-only (" DUMP_DESIGN ")\n");
+    u64 all = 0;
+    for (u64 k = 0; k < D_N; k++) {
+        const struct dump_span *s = &dump_spans[k];
+        if (s->phys < D_DRAM_LO || s->phys >= D_DRAM_HI || s->len > D_DRAM_HI - s->phys || (s->phys & 63) || !s->len || (s->len & 63)
+            || s->len > D_SPAN_MAX) {
+            puts_("!! span "); putnum((i64)k); puts_(" is not a 64-byte aligned piece of DRAM of at most 256 KB; nothing is read\n");
+            puts_("== level 31 verdict: NOTHING READ\n");
+            return;
+        }
+        all += s->len;
+    }
+    if (all > D_ALL_MAX) { puts_("!! the spans add up to more than 1.5 MB; nothing is read\n== level 31 verdict: NOTHING READ\n"); return; }
+    i64 fd = sys_open(TEST_ROOT "/dev/mem", D_SYNC, 0);          /* read-only: this descriptor cannot be mapped for writing */
+    if (fd < 0) { puts_("!! /dev/mem open failed "); putnum(fd); puts_("\n== level 31 verdict: NOTHING READ\n"); return; }
+    u64 got = 0;
+    for (u64 k = 0; k < D_N; k++) {
+        const struct dump_span *s = &dump_spans[k];
+        u64 page = s->phys & ~0xFFFUL, lead = s->phys - page, maplen = (lead + s->len + 0xFFFUL) & ~0xFFFUL;
+        puts_("== span "); putnum((i64)k); puts_(" block "); putnum((i64)s->block); puts_(" "); puts_(s->what); puts_(" phys "); d_x64(s->phys);
+        i64 m = sys_mmap_ro((int)fd, maplen, page);
+        if (m == -1) { puts_("\n!! mmap failed\n"); continue; }
+        puts_(" raw "); putnum((i64)s->len); puts_(" bytes follow\n");
+        for (u64 off = 0; off < s->len; off += sizeof d_buf) {
+            u64 n = s->len - off < sizeof d_buf ? s->len - off : sizeof d_buf;
+            const volatile u64 *src = (const volatile u64 *)(m + (i64)(lead + off));
+            for (u64 w = 0; w < n / 8; w++) d_buf[w] = src[w];
+            put(d_buf, n);
+        }
+        puts_("\n== span end\n");
+        sys_munmap((void *)m, maplen);
+        got++;
+    }
+    sys_close((int)fd);
+    puts_("== level 31 verdict: "); putnum((i64)got); puts_(" of "); putnum((i64)D_N); puts_(" spans read\n");
+}
+#endif
+
 /* ------------------------------------------------------------------ entry */
 
 static void run(void)
@@ -2947,6 +3074,9 @@ static void run(void)
 #endif
 #if LEVEL == 29 || LEVEL == 30
     level29();
+#endif
+#if LEVEL == 31
+    level31();
 #endif
     puts_("== done, bytes written before this line: "); putnum((i64)out_total); puts_("\n");
     if (out_fd >= 0) sys_close(out_fd);

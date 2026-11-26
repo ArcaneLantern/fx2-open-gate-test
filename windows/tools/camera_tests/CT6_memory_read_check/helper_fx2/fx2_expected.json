@@ -1,7 +1,7 @@
 {
- "label": "fx2read_v1",
+ "label": "fx2read_v2",
  "cp_lo": 786432,
- "cp_hi": 40894464,
+ "cp_hi": 162529280,
  "avcam_phys": 17196646400,
  "avcam_reserve": "@0x401000000",
  "id_files": {
@@ -320,6 +320,11 @@
    1
   ],
   [
+   "dmmworkspace",
+   "0x21a5000",
+   54
+  ],
+  [
    "display0",
    "0x1f9000",
    1
@@ -338,6 +343,11 @@
    "display3",
    "0xf79000",
    1
+  ],
+  [
+   "snapshot",
+   "0x9a21000",
+   4
   ]
  ],
  "designs": {

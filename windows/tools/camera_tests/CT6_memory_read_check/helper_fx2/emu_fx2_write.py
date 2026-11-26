@@ -240,6 +240,45 @@ def main():
         r, t = go(path.read_bytes(), mem, {})
         ok(not r.bad and r.n_writes == 0 and changed_only(mem, before, {}), f"{label} on an FX2, its chain led to the FX2's records: nothing is written")
 
+    # ---- B5 / B6 (second kit, test 1): fhband_fx2_v1, the A7 IV's fhband_v1, at the same sites as L5 with other new bytes
+    db = design("fhband_fx2_v1")
+    assert db["mode_index"] == index and db["stored_record"]["stock"] == d["stored_record"]["stock"]
+    bst, bnw = bytes.fromhex(db["stored_record"]["stock"]), bytes.fromhex(db["stored_record"]["design"])
+    b_allowed = {}
+    for p in db["patches"]:
+        a = int(p["addr"], 16)
+        for k, (o, n) in enumerate(zip(bytes.fromhex(p["old"]), bytes.fromhex(p["new"]))):
+            if o != n:
+                b_allowed[a + k] = (o, n)
+    for k in range(REC):
+        if bst[k] != bnw[k]:
+            b_allowed[RECS + index * REC + k] = (bst[k], bnw[k])
+
+    def bstate(mem):
+        vals = [(mem.read(a, 1)[0], pr) for a, pr in b_allowed.items()]
+        return "stock" if all(v == pr[0] for v, pr in vals) else "new" if all(v == pr[1] for v, pr in vals) else "mixed"
+    B5, B6 = lib("B5"), lib("B6")
+    mem = camera()
+    before = mem.snapshot()
+    r, t = go(B5, mem, b_allowed)
+    ok(not r.bad and "DONE: all 14 sites hold the target bytes (apply)" in t and bstate(mem) == "new" and changed_only(mem, before, b_allowed),
+       f"B5 (fhband_fx2_v1) on a stock FX2: 13 sites and the stored record new, nothing else changed ({r.n_writes} line writes)")
+    r, t = go(B5, mem, b_allowed)
+    ok(not r.bad and "NOTHING TO DO" in t and r.n_writes == 0, "B5 again: nothing to do, no write")
+    r, t = go(L5, mem, allowed)
+    ok(not r.bad and r.n_writes == 0 and "nothing is written" in t, "L5 on a camera holding B5's state: refused, nothing written")
+    r, t = go(B6, mem, b_allowed)
+    ok(not r.bad and "(put back)" in t and "DONE" in t and bstate(mem) == "stock" and changed_only(mem, before, {}), "B6: everything stock again, byte for byte")
+    mem = camera()
+    r, t = go(L5, mem, allowed)
+    r, t = go(B5, mem, b_allowed)
+    ok(not r.bad and r.n_writes == 0 and "nothing is written" in t, "B5 on a camera holding L5's state: refused, nothing written")
+    for lose in (1, 14):
+        mem = camera()
+        before = mem.snapshot()
+        r, t = go(B5, mem, b_allowed, lose=lose)
+        ok(not r.bad and "NOT DONE" in t and bstate(mem) == "stock" and changed_only(mem, before, {}), f"B5 with line write {lose} lost: every site put back")
+
     # ---- L13 / L14: the memory manager
     dd = design("dmmwb4688_fx2_v1")
     E.DESIGN = "dmmwb4688_fx2_v1"

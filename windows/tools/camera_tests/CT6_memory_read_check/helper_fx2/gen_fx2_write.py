@@ -67,7 +67,9 @@ def sites_header(name="ogsq_fx2_v1"):
     assert d["record_size"] == REC and len(sites) == 13
     r_stock, r_new = bytes.fromhex(d["stored_record"]["stock"]), bytes.fromhex(d["stored_record"]["design"])
     offs = [k for k in range(REC) if r_stock[k] != r_new[k]]
-    assert len(r_stock) == len(r_new) == REC and offs[:2] == [6, 7] and r_stock[6] == r_stock[7] == 1 and 2 < len(offs) <= 128
+    assert len(r_stock) == len(r_new) == REC and r_stock[6] == r_stock[7] == 1 and 2 < len(offs) <= 128
+    # the squeeze designs change the vertical sampling ratio (+6/+7 = 27/32); the band test (fhband_fx2_v1, second kit) keeps it stock
+    assert (offs[:2] == [6, 7]) == bool(d.get("stored_record_extra")), "the record's +6/+7 bytes do not match the design's stored_record_extra"
     out += ["static const unsigned short rec_offs[%d] = { %s };" % (len(offs), ", ".join("0x%x" % k for k in offs)),
             "static const u8 rec_stock[%d] = { %s };" % (len(offs), hx(bytes(r_stock[k] for k in offs))),
             "static const u8 rec_new[%d] = { %s };" % (len(offs), hx(bytes(r_new[k] for k in offs))),
@@ -229,6 +231,7 @@ def mp_header(name):
 if __name__ == "__main__":
     print("dmm header dmmwb4688_fx2_v1", dmm_header())
     print("sites header ogsq_fx2_v1", sites_header())
+    print("sites header fhband_fx2_v1 (second kit, test 1)", sites_header("fhband_fx2_v1"))
     print("words header outsz2560_fx2_v1", words_header("outsz2560_fx2_v1"))
     if (DES / "lcd32dsq_fx2_v1.json").exists():
         print("words header lcd32dsq_fx2_v1", words_header("lcd32dsq_fx2_v1"))

@@ -4,6 +4,48 @@ Everything here was read from the FX2 1.01 firmware update (`BODYDATA.DAT`, SHA-
 
 The reference designs are the A7 IV's default open-gate state. It works on an A7 IV (2026-11-18 onwards): a true 3840 × 2560 file of the whole 3:2 sensor area in XAVC HS 4K and XAVC S 4K at 24p. Since 2026-11-24 its MP4 headers say 3840 × 2560 (Resolve opens the file at 3:2), and the 3:2 rear screen shows the picture with the focus frames. The kit's shape (launchers, the read-only check first, the closing dump, the FX2's own De-Squeeze Display kept and set for the 3:2 picture) is the FX3 kit's, which records open gate on two FX3s.
 
+## First camera result (2026-11-25, issue #1) and the second kit (2026-11-26)
+
+**What ran.** One tester, macOS launchers, firmware 1.01, read helper `fx2read_v1`. Evidence: `a7iv_map/evidence/fx2/tester_2026-11-25/`.
+- Checks: READY every time.
+- Every write step DONE with every site read back: L13, L5 (stored record of 0x8c0 found at 0x24de78c through the pointer chain), L16, L19 (101 + 6) and S16.
+- L13 found no live division ("no unit of the present division exists"), also in a first run that had started on MOVIE.
+- That first run's L19 stopped at the service login ("Invalid response: -65528") before anything was sent.
+
+**What failed.** Switching to MOVIE gave a purple flash, then the coprocessor stopped itself and the camera restarted to stock. This happened four times, once without S16.
+
+The kept kprint record is identical each time:
+- task CAM_VD_SEQUENCE, data abort at pc 0x507dae, lr 0x507da1, DFAR 0;
+- r1 0x190cfc4, r5 0x190cfc0;
+- the stack holds 0x50806b, 0x527fab, 0x55f343 and the settings block 0x196aa58.
+
+**Read statically from the FX2 1.01 image:**
+- **The abort is deliberate.** 0x507d28 (called from 0x508048) asks 0xba2500(8, 5, 4), "still busy at sync 4", and counts frames in 0x190cfc0. At 11 it prints "FW: S-Ele Refresh ng force exception" (0x507e4c), clears the counters and stores to address 0.
+  - This is the A7 IV's F662/F667 signature and the ZV-E1 first test's (whose crash record has the same register shape).
+  - On the A7 IV the cause was the raw write buffer (fixed by `dmmwb4688_v1`, F679/F680), and on the ZV-E1 the same.
+  - FX2's kprint keeps no lines before the abort (the A7 IV's kept the IsAnyValidForSync lines), and its boot log restarts at boot, so nothing tells which stage was busy.
+- **The record was right.** The camera's stored record of 0x8c0 differs from the emulated one only in flag bytes (+0xe7, +0xef, +0x102, +0x11a, +0x153, +0x15b, +0x16e, …), none of them a design byte.
+- **The write buffer's id.** It is chosen at run time by 0xbc557c, the A7 IV's 0xa1fefa line for line, into +0x3c0:
+  - 0x43e (key 0x57f, enlarged by L13) by default;
+  - 0x63d (key 0x704, 73.4 MB) under one condition;
+  - **0x608 (key 0x6a3, 27,864,320 bytes = the stock 3,958 rows, not enlarged)** when setting byte 0x18f62d8+0x7d is 1.
+
+  That byte reads 0 in every dump, because the camera core's settings block is zero during a USB session. Which id the FX2 uses in its 4K mode is not known.
+- **The snapshot image.** `/cp/tomco.txt` saves a "snapshot debug image" on an exception: `snapshotdbg_addr=0x09A21E00`, 48 MB, tag `SOLID_SSHOT` in the code. Whether it survives the restart is not known.
+
+**The second kit: a diagnostic ladder** (`fx2_apply.py test1 | test2`; the full apply is unchanged).
+- **Test 1 = L13 + B5.**
+  - B5 is `fhband_fx2_v1`, the A7 IV's `fhband_v1` (F658), ported with `build_og_fx2.py`. Its 11 sensor cells are L5's own, so the sensor goes into the same full-height mode.
+  - Its two picture records keep the stock 16:9 band, so the stage keeps its stock height. The stored record changes in 29 bytes (not +6/+7).
+  - If it runs, the FX2 takes the full-height read-out, and the dump on MOVIE shows which write buffer was opened.
+- **Test 2 = L13 + L5 only:** the A7 IV's two-step squeezed baseline (F682).
+- **Read helper `fx2read_v2`:**
+  - a site may hold a test design's bytes, reported TEST: test 1 shows the two records and the stored record as TEST and the 11 cells as TARGET;
+  - the dump also reads the memory manager's workspace (54 pages from 0x21a5000; the pointer 0x192fc28 holds 0x21a5d18 in all three of the tester's dumps). The decoder lists live and left-over unit objects with their sizes, and the write-buffer keys 0x57f / 0x6a3 / 0x704;
+  - last, it reads the first 4 pages of the snapshot area 0x9a21000 (CP_HI raised to 0x9b00000).
+- **New pins:** check 9dd469a2, dump 1f51dc2a, B5 23e19cbe, B6 ea9c8628. Every other library rebuilt to its old pin.
+- **Checks:** emu_fx2 23 cases, emu_fx2_write 57.
+
 ## What the FX2 is
 
 - **The sensor is the A7 IV's.**
@@ -72,7 +114,7 @@ There is no C step (the FX2 has its own De-Squeeze Display) and no playback step
 | record selector | 0x255988 | 0x27ab64 | emulated: 0x8c0 and 0x880 → the pair above |
 | drive-parameter calculator | 0x348ea4 | 0x3d3024 | |
 | table map (constructor caller) | 0x89a07e | 0xa0fa1c | |
-| stored records | 0x1fd1224 (0x15c) | 0x24dd92c (0x170) | mode 0x8c0 at 0x24de8cc |
+| stored records | 0x1fd1224 (0x15c) | 0x24dd92c (0x170) | mode 0x8c0 at 0x24de78c |
 | sensor object; drive-parameter pointer | 0x12b9ce0; control +0x684 | 0x1750860; **control +0x6ac** | the FX2's control object puts every field 8 bytes on from the A7C II's |
 
 - **The stored record.** With the design's cells, the FX2's own calculator gives the A7C II port's records exactly, stock and patched: 31 bytes differ, with the vertical sampling ratio 27/32 at +6/+7 (`evidence/fx2/ogsq_fx2_v1_drvparam_records_emu.json`). No other mode's record changes.
