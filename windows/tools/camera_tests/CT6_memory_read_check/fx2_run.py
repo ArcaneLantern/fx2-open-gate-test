@@ -530,10 +530,13 @@ def report(session, facts, which):
                                 "the view may also be left from an earlier state)"))
         mw = d.get("margin_words")
         if mw:
-            # 0xbd6f34 returns 0 when the switch is not zero, so the words only matter with the switch at 0
-            note = ("switch not zero: no margin, the override asks for no more than the output size" if mw["switch"]
-                    else "all zero: the override asks for no more than the output size" if not any(mw["words"])
-                    else "switch 0 and words set: a margin may apply, the override can ask the first scaler for more than the output size")
+            # The switch alone does not tell (SteadyShot Active applied 7208 with switch 3), so judge from the view: the override
+            # stores max(records' first scaler, output / (1 - margin)), so a margin is in use when the view exceeds both.
+            fs = rv and "records_in_place" in rv and (rv["first_scaler"][1], rv["output"][1], rv["first_scaler_by_records"][1])
+            note = ("margin in use: the view asks the first scaler for %d rows for %d output rows, %.1f%%" % (fs[0], fs[1], 100.0 * (1 - fs[1] / fs[0]))
+                    if fs and fs[0] > max(fs[1], fs[2])
+                    else "no margin in use: the view's first scaler is no larger than the records or the output give" if fs
+                    else "whether one is in use shows in the resize view")
             lines.append("resize margin words at %s: %s; switch %d (%s)"
                          % (mw["address"], ", ".join(str(x) for x in mw["words"]), mw["switch"], note))
         fh = next((x for x in f["coprocessor_sites"] if x["name"] == "fehold"), None)
