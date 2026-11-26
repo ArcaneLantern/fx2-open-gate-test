@@ -530,8 +530,12 @@ def report(session, facts, which):
                                 "the view may also be left from an earlier state)"))
         mw = d.get("margin_words")
         if mw:
-            lines.append("resize margin words at %s: %s; switch %d (all zero: the override asks for no more than the output size)"
-                         % (mw["address"], ", ".join(str(x) for x in mw["words"]), mw["switch"]))
+            # 0xbd6f34 returns 0 when the switch is not zero, so the words only matter with the switch at 0
+            note = ("switch not zero: no margin, the override asks for no more than the output size" if mw["switch"]
+                    else "all zero: the override asks for no more than the output size" if not any(mw["words"])
+                    else "switch 0 and words set: a margin may apply, the override can ask the first scaler for more than the output size")
+            lines.append("resize margin words at %s: %s; switch %d (%s)"
+                         % (mw["address"], ", ".join(str(x) for x in mw["words"]), mw["switch"], note))
         fh = next((x for x in f["coprocessor_sites"] if x["name"] == "fehold"), None)
         if fh:
             lines.append("fallback code word (fehold_fx2_v1) at %s: %s" % (fh["address"], fh["state"]))
