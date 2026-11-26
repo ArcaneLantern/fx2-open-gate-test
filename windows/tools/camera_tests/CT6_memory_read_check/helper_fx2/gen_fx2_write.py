@@ -10,6 +10,7 @@ screen words). The write levels of readcheck.c are used as they are; only their 
 This writes, into helper/, in gen_expected.py's formats:
   expected_dmm_dmmwb4688_fx2_v1.h            levels 13/14: the four DMM words, their unit records and the parent records
   expected_sites_ogsq_fx2_v1.h               levels 5/6: 13 sensor/record sites and the changed bytes of the 0x170-byte stored record
+  expected_sites_ogsq880_fx2_v1.h, expected_sites_ogh2560880_fx2_v1.h   the same for mode 0x880 (PAL 25p; fifth kit)
   expected_words_outsz2560_fx2_v1.h          levels 16/17: the output-size word and its guards
   expected_words_lcd32dsq_fx2_v1.h           levels 16/17 (S16/S17): the rear screen at 3:2, the frame rectangles, the de-squeeze words
   expected_mp_ogfile2560_hs_s_fx2_v2.h       levels 19/20: encoder-side sites in av-cam.bin and libmpr.so, with the two MP4 header heights
@@ -236,6 +237,9 @@ if __name__ == "__main__":
     print("sites header ogsq_fx2_v1", sites_header())
     print("sites header fhband_fx2_v1 (second kit, test 1)", sites_header("fhband_fx2_v1"))
     print("sites header ogh2560_fx2_v1 (fourth kit: the first scaler gives 4336x2560)", sites_header("ogh2560_fx2_v1"))
+    # fifth kit (2026-11-27, PAL): mode 0x880 (25p on a PAL-set FX2; its stored record comes from the 50 Hz input table)
+    print("sites header ogsq880_fx2_v1 (fifth kit: PAL squeeze, mode 0x880)", sites_header("ogsq880_fx2_v1"))
+    print("sites header ogh2560880_fx2_v1 (fifth kit: PAL real rows, mode 0x880)", sites_header("ogh2560880_fx2_v1"))
     print("words header outsz2560_fx2_v1", words_header("outsz2560_fx2_v1"))
     print("words header fehold_fx2_v1 (fourth kit, the fallback)", words_header("fehold_fx2_v1"))
     if (DES / "lcd32dsq_fx2_v1.json").exists():

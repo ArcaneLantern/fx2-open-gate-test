@@ -7,11 +7,21 @@
   python fx2_apply.py squeeze  [--dry-run]             (the squeezed open gate: ran on an FX2, 2026-11-26)
   python fx2_apply.py test5 | test6 | og2560 | test7  [--dry-run]      (fourth kit, 2026-11-26: the path to a true 3840x2560 file)
   python fx2_apply.py putback-2560 | putback-hold  [--dry-run]         (put back og2560 / test7 without a cold boot)
+  add --pal or --ntsc to any of these but screen / screen-putback / test1 (fifth kit, 2026-11-27): which sensor-side steps to use. Without
+  either, the newest saved check says it (fx2read_v5 reads it from the camera's records), or the script asks.
 
 The FX2 counterpart of fx3_apply.py (the FX3 kit, which records open gate on two FX3s). The FX2 is the A7 IV's sensor (IMX710 class)
 on the A7C II's platform, so its open-gate steps are the A7 IV kit's (its default state since 2026-11-18, true 3840x2560 files of the
 whole 3:2 sensor area in XAVC HS 4K and XAVC S 4K at 24p, with the MP4 header fix since 2026-11-24), ported to the FX2 1.01 and
-checked against the FX2's own code in emulation. NOTHING OF THIS KIT HAS RUN ON AN FX2.
+checked against the FX2's own code in emulation. On FX2s set to NTSC the squeezed open gate (squeeze: GitHub issue 1) and the true
+3840x2560 file (og2560: issue 5, XAVC HS 4K and XAVC S 4K, a 10-minute clip, playback, HDMI, the 3:2 rear screen) WORK (2026-11-26).
+
+  NTSC or PAL (fifth kit, 2026-11-27). On a PAL-set FX2 4K 25p runs drive mode 0x880, whose stored record comes from the 50 Hz input table;
+  the sensor-side steps L5 / H5 are made for mode 0x880's NTSC sibling 0x8c0 (23.98p) and refuse on PAL (nothing is written; a PAL
+  camera's dump showed it). The PAL steps are the same designs moved to mode 0x880: Q5 (ogsq880_fx2_v1, for L5; the A7 IV's ogsq880_v1,
+  which works on a PAL A7 IV) and P5 (ogh2560880_fx2_v1, for H5), put back by Q6 / P6. Every other step is the same on NTSC and PAL
+  (L19 covers 25p as well as 23.98p). With --pal the targets use them: og2560 = L13 + P5 + L16 + L19 + S16, squeeze = L13 + Q5 + S16.
+  The PAL steps are emulated against a PAL FX2's own records, NOT RUN on a camera yet.
 
   apply    five steps, each its own USB session: L13 raw write buffer (dmmwb4688_fx2_v1), L5 sensor side (ogsq_fx2_v1), L16 output size
            (outsz2560_fx2_v1), L19 encoder side with the MP4 headers (ogfile2560_hs_s_fx2_v2), S16 rear screen at 3:2 with the focus frames
@@ -40,12 +50,13 @@ checked against the FX2's own code in emulation. NOTHING OF THIS KIT HAS RUN ON 
   least the output size (0xbd3a32; only the FX2 and the A1 II have that code). With L16 that is 4336x2560, while L5's records make the
   first scaler give 4336x2438. The A7 IV's design for a 4336x2560 first scaler, ogh2560_v1 (F712, F713), is ported as H5 and takes L5's place.
   test5    L13 + H5: the taller first-scaler picture with the stock output size. Expected: what test 2 gives (squeezed 3840x2160 clips).
-  test6    L13 + H5 + L16: plus the output size. Expected: a steady picture; a recording may stop after about a second, because the
-           encoder is still set for 2,160 rows (the A7 IV did that at this stage, F688).
+  test6    L13 + H5 + L16: plus the output size. A DIAGNOSTIC STEP ONLY: do not press REC. The encoder is still set for 2,160 rows,
+           and on an FX2 (GitHub issue 5) a recording in this state froze the camera until the battery was pulled.
   og2560   L13 + H5 + L16 + L19 + S16: THE 3840x2560 PATH. Expected: clips of 3840x2560 with 2,560 real rows, the 3:2 rear screen filled.
   test7    L13 + L5 + F16 + L16 + L19, THE FALLBACK, for the case that test5 does not run: F16 is one code word that makes the resize
            set-up keep the records' first-scaler size, so the second scaler enlarges 2,438 rows to 2,560 as on the A7 IV. No screen step.
-  For all four: SteadyShot Off (with Active the FX2 asks the first scaler for more rows still), APS-C/Super 35 Off, S&Q and Proxy off.
+  For all four: APS-C/Super 35 Off, S&Q and Proxy off. SteadyShot Off for a first run; with og2560 SteadyShot Active works on an FX2
+  (issue 5: the margin raises the first-scaler request to 4336x2877, the camera records clean 3840x2560 files, cropped about 1.12x).
 
 There is no preview-key routine in this kit: the FX2's own De-Squeeze Display (Off, 1.3x, 2.0x on 1.01) is kept, and S16 sets its ratios
 for the 3:2 picture.
@@ -58,8 +69,10 @@ Rules it keeps:
 - It stops at the first step that does not end in DONE or NOTHING TO DO, and says what state that leaves.
 - Each step is one pinned library; the runner (fx2_run.py) refuses any other bytes.
 Nothing is written to a firmware file or to the camera's settings. What is written lives in the running camera's memory. A cold
-boot (battery out for 10 seconds) removes it. Whether the power switch alone does is not known on the FX2 (on the A7 IV it does not,
-on the A7S III it does), so keep the FX2 switched on from the first step to the last.
+boot (battery out for 10 seconds) removes it. The power switch alone does NOT (GitHub issue 5): on the FX2 it restarts the image
+processor, so the coprocessor steps (L13, L5/H5, L16, S16) are stock again, but the main processor keeps the encoder step (L19). That
+mixed state must not be used for recording: take the battery out, or run the putback, then apply again. Keep the FX2 switched on from
+the first step to the last.
 """
 import argparse
 import json
@@ -86,15 +99,52 @@ STEPS = {"apply": ("L13", "L5", "L16", "L19"), "putback": ("L20", "L17", "L6", "
          "putback-2560": ("S17", "L20", "L17", "H6", "L14"), "putback-hold": ("L20", "L17", "F17", "L6", "L14")}
 TESTS = ("test1", "test2", "test3", "test4", "squeeze", "test5", "test6", "og2560", "test7")
 FOURTH = {"test5": "the taller first-scaler picture (4336x2560) with the stock output size. Expected: what test 2 gives, a steady picture and squeezed 3840x2160 clips.",
-          "test6": "test 5 plus the output size 3840x2560. Expected: a steady picture; a recording may stop after about a second (the encoder is still set for 2,160 rows).",
+          "test6": "test 5 plus the output size 3840x2560. A diagnostic step only: look at the screen, do NOT record (the encoder is still set for 2,160 rows).",
           "og2560": "the path to a true 3840x2560 file: raw write buffer, the sensor side with a 4336x2560 first scaler, output size, encoder side, rear screen. "
                     "Expected: clips of 3840x2560.",
           "test7": "the fallback: the squeeze design with one code word that keeps the first-scaler size, then output size and encoder side. Expected: clips of 3840x2560 "
                    "(2,438 rows enlarged, as on the A7 IV). Run it only if test 5 does not give a picture."}
+# fifth kit (2026-11-27): the PAL sensor-side steps (mode 0x880) that take the NTSC ones' place with --pal; test1's band design has none
+PAL_STEPS = {"L5": "Q5", "L6": "Q6", "H5": "P5", "H6": "P6"}
+NO_PAL = ("test1",)
 RUNNER = HERE / "fx2_run.py"
 LISTER = HERE.parent / "CT1_usb_first_contact" / "ct1_stage2_service.py"
 STILL = "STILL (the Still/Movie switch on STILL)"
 MOVIE = "MOVIE (the Still/Movie switch on MOVIE; File Format XAVC HS 4K or XAVC S 4K, 24p)"
+RATE = {"NTSC": "24p (23.98p)", "PAL": "25p"}
+
+
+def last_family():
+    """NTSC or PAL as the newest saved check or dump of this kit reads it from the camera's stored records (fx2read_v5's check, or any
+    dump), or None when that result does not say (older helpers' checks) or there is none."""
+    for folder, man in sessions():
+        res = man.get("results", {})
+        f = (res.get("ct6", {}).get("result") or {}).get("s3")
+        if res.get("which") in ("check", "dump") and f:
+            fam = fx2_run.camera_state(f)["family"].split(" ")[0]
+            return (folder.name, fam) if fam in ("NTSC", "PAL") else None
+    return None
+
+
+def choose_family(a, live):
+    """The family the sensor-side steps are taken for: --ntsc / --pal, else the newest check's reading, else asked (live) or NTSC (dry run)."""
+    if a.ntsc and a.pal:
+        raise SystemExit("--ntsc and --pal together. Nothing was sent.")
+    known = last_family()
+    given = "NTSC" if a.ntsc else "PAL" if a.pal else None
+    if given and known and known[1] != given:
+        raise SystemExit("--%s was given, but the newest check (%s) reads this camera as %s. Set the camera's NTSC/PAL Selector, run check_readonly "
+                         "again, then apply. Nothing was sent." % (given.lower(), known[0], known[1]))
+    if given or known:
+        return given or known[1]
+    if not live:
+        say("(NTSC or PAL: not known from the saved checks; the dry run shows the NTSC steps. Add --pal for the PAL steps.)")
+        return "NTSC"
+    say("Is the camera set to NTSC or PAL? (the menu's NTSC/PAL Selector; PAL: 25p / 50p, NTSC: 23.98p / 29.97p / 59.94p)")
+    ans = input("Type NTSC or PAL: ").strip().upper()
+    if ans not in ("NTSC", "PAL"):
+        raise SystemExit("Neither NTSC nor PAL. Nothing was sent.")
+    return ans
 
 
 def say(text=""):
@@ -122,7 +172,7 @@ def last_check():
         res = man.get("results", {})
         f = (res.get("ct6", {}).get("result") or {}).get("s3")
         if res.get("which") in ("check", "dump") and f:       # a dump makes every check the check makes, and gives the same verdict
-            current = any(v in f.get("header", "") for v in ("fx2read_v1 ", "fx2read_v2 ", "fx2read_v3 ", "fx2read_v4 ")) and "ILME-FX2 1.01" in f.get("header", "")
+            current = any(v in f.get("header", "") for v in ("fx2read_v1 ", "fx2read_v2 ", "fx2read_v3 ", "fx2read_v4 ", "fx2read_v5 ")) and "ILME-FX2 1.01" in f.get("header", "")
             return folder.name, current and bool(f.get("ready")) and not f.get("identity_differs")
     return None
 
@@ -232,8 +282,24 @@ def main():
     ap.add_argument("--no-screen", action="store_true", help="with apply or putback: only the four open-gate steps, without the screen step")
     ap.add_argument("--no-movie-session", action="store_true", help="with apply or screen: leave out the closing read-only session in movie mode")
     ap.add_argument("--no-meta", action="store_true", help="with apply: the encoder step without the MP4 header heights (N19); the headers keep saying 3840x2160")
+    ap.add_argument("--ntsc", action="store_true", help="the camera is set to NTSC (23.98p): the sensor-side steps L5 / H5")
+    ap.add_argument("--pal", action="store_true", help="the camera is set to PAL (25p): the sensor-side steps Q5 / P5 (mode 0x880)")
     a = ap.parse_args()
     steps = STEPS[a.what]
+    family = "NTSC"
+    if any(k in PAL_STEPS for k in steps):
+        if not a.dry_run and a.what in ("apply", "screen") + TESTS:
+            chk = last_check()                       # the READY rule comes before any question (the NTSC/PAL one below included)
+            if chk is None or not chk[1]:
+                raise SystemExit("The newest saved read-only check of this kit %s. Run check_readonly first and get VERDICT READY. Nothing was sent."
+                                 % ("does not exist" if chk is None else "(%s) does not say READY" % chk[0]))
+        family = choose_family(a, not a.dry_run)
+        if family == "PAL":
+            steps = tuple(PAL_STEPS.get(k, k) for k in steps)
+    elif a.pal and a.what in NO_PAL:
+        raise SystemExit("%s has no PAL build (its band design is for mode 0x8c0, NTSC only). Nothing was sent." % a.what)
+    global MOVIE
+    MOVIE = MOVIE.replace("24p", RATE[family].split(" ")[0])
     if a.no_screen and a.what not in ("apply", "putback"):
         raise SystemExit("--no-screen goes with apply or putback. Nothing was sent.")
     if a.no_meta and a.what != "apply":
@@ -250,7 +316,7 @@ def main():
         p = fx2_run.S3 / name
         if not p.is_file() or c.sha256(p.read_bytes()) != sha:
             raise SystemExit("%s is missing or is not the pinned build. Nothing was sent." % name)
-    say("FX2 1.01, %s: %d steps" % (a.what, len(steps)))
+    say("FX2 1.01, %s%s: %d steps" % (a.what, " (PAL: mode 0x880, 25p)" if family == "PAL" else "", len(steps)))
     for n, k in enumerate(steps, 1):
         say("  %d. %s  %s  (library %s...)" % (n, k, fx2_run.WRITE_STEPS[k][2], fx2_run.WRITE_STEPS[k][1][:16]))
     if closing and not a.no_movie_session:
@@ -277,19 +343,27 @@ def main():
         say("  delivers 4336x2438: that was the crash of L13 + L5 + L16. %s" % ("H5 delivers 4336x2560." if "H5" in steps else "F16 keeps the size the records give."))
         say("  NOT YET RUN ON AN FX2. A restart is possible and harmless (the patch is gone after it). Each step writes nothing unless its bytes are")
         say("  exactly the stock bytes.")
-        say("  Camera settings for this test: SteadyShot Off, APS-C/Super 35 Off, S&Q off, Proxy off, File Format XAVC HS 4K, 23.98p.")
+        say("  Camera settings for this test: SteadyShot Off (Active works with og2560 on an NTSC FX2, but keep it Off for a first run), APS-C/Super 35 Off,")
+        say("  S&Q off, Proxy off, File Format XAVC HS 4K or XAVC S 4K, %s." % RATE[family])
+        if a.what == "test6":
+            say("  TEST 6 IS A DIAGNOSTIC STEP ONLY: look at the screen, but do NOT press REC. The encoder is still set for 2,160 rows; on an FX2 a recording")
+            say("  in this state froze the camera until the battery was pulled (GitHub issue 5). For clips, use og2560.")
+        if family == "PAL":
+            say("  PAL: the sensor-side step is %s, made for mode 0x880 (25p). NOT YET RUN ON A CAMERA: emulated against a PAL FX2's own records." % next(k for k in steps if k[0] in "QP"))
     elif a.what in TESTS:
         say("This is %s of the diagnostic ladder. On the first FX2 test the whole apply worked, but MOVIE ended in a forced" % a.what)
         say("  exception and a restart. This test applies only %s, so that the result says which part the FX2 does not take." % " + ".join(steps))
         say("  A restart is possible and harmless (the patch is gone after it). Each step writes nothing unless its bytes are exactly the stock bytes.")
+        if a.what == "squeeze":
+            say("  (squeeze works on NTSC FX2s%s.)" % ("; PAL uses Q5, NOT YET RUN on a camera" if family == "PAL" else ""))
     elif applying:
         say("On the FX2 this state CRASHES on MOVIE entry (2026-11-25 and 2026-11-26: a forced exception and a restart to stock). The first failing")
         say("  step is L16 after L5. Use open_gate_squeezed (works) or the fourth kit's open_gate_3840x2560_test instead.")
         say("  Each step writes nothing unless its bytes are exactly the FX2 1.01 stock bytes.")
     else:
         say("It has to follow an apply of this kit.")
-    say("A cold boot (battery out for 10 seconds) returns the camera to stock. Whether the power switch alone does on the FX2 is not known:")
-    say("so KEEP THE CAMERA SWITCHED ON from now until the script says it is finished.")
+    say("A cold boot (battery out for 10 seconds) returns the camera to stock. The power switch alone does NOT: it puts back the image processor's")
+    say("steps but keeps the encoder step, a mixed state not to record in. So KEEP THE CAMERA SWITCHED ON from now until the script says it is finished.")
     if a.what == "apply" or a.what in TESTS:
         say("Before you go on: the switch on %s, a charged battery," % STILL)
         say("and a camera that was cold booted and has not been on MOVIE or S&Q since. (If it starts on MOVIE: set the switch to STILL,")
@@ -329,8 +403,8 @@ def main():
         else:
             say("The files' MP4 headers (tkhd, stsd, Sony's PROF) now say 3840x2560: editors should open them at 3:2 without a remux.")
             say("  Sony's XML (in the file and the sidecar) still says 3840x2160, 16:9.")
-        say("In-camera playback: the FX2 opens playback with the A7 IV's decoder channel, which plays these clips on an A7 IV. Not tried on an FX2:")
-        say("  if a clip says 'Unable to display', do NOT try again (on an FX3 a retry froze the camera); check the clips on a computer and report it.")
+        say("In-camera playback: the 3840x2560 clips of og2560 played on an FX2 (GitHub issue 5). If a clip says 'Unable to display', do NOT try")
+        say("  again (on an FX3 a retry froze the camera); check the clips on a computer and report it.")
     if "S16" in steps:
         say("The screen step: on MOVIE the 3:2 rear screen should now be filled with the whole picture at its true shape. A circle should look round.")
         say("  The viewfinder (a 4:3 panel) keeps showing the picture squeezed, as on the A7 IV.")
@@ -348,7 +422,8 @@ def main():
         say("  a restart? If it recorded: the clip's properties (size, frame rate), or the clip. To return to stock: battery out for 10 seconds.")
         if a.what in ("og2560", "test7"):
             say("  For a clip of this test: the size MediaInfo shows (3840x2560 expected), whether it plays on a computer, and whether a recording")
-            say("  stops by itself. In-camera playback is not tried on an FX2: if a clip says 'Unable to display', do NOT try again.")
+            say("  stops by itself.%s" % (" PAL: the frame rate MediaInfo shows (25 expected)." if family == "PAL" else ""))
+        say("  Do not use the power switch to undo it: it keeps the encoder step (L19) and leaves a mixed state. Battery out, or the putback.")
         say("  Before the next test: battery out for 10 seconds, switch on with the switch on STILL.")
         return
     if closing:
@@ -357,9 +432,9 @@ def main():
         else:
             movie_session()
         say()
-        say("Use only XAVC HS 4K or XAVC S 4K at 24p (23.98p) while it is applied: other 4K formats and frame rates are not set up and fail.")
+        say("Use only XAVC HS 4K or XAVC S 4K at %s while it is applied: other 4K formats and frame rates are not set up and fail." % RATE[family])
         say("If the camera stops or restarts: do NOT pull the battery yet. Set the switch to STILL, replug USB and run dump_info, then send camera_private.")
-        say("To return to stock: battery out for 10 seconds.")
+        say("To return to stock: battery out for 10 seconds. Do not use the power switch for that: it leaves the encoder step applied.")
 
 
 if __name__ == "__main__":

@@ -1,6 +1,6 @@
 @echo off
 rem FX2 (firmware 1.01): apply the default state with the encoder step without the MP4 header heights: the files' MP4 headers keep saying 3840x2160.
-rem WRITES into the camera's memory (not firmware, not settings). A cold boot (battery out for 10 seconds) returns it to stock; whether the power switch alone does on the FX2 is not known.
+rem WRITES into the camera's memory (not firmware, not settings). A cold boot (battery out for 10 seconds) returns it to stock. The power switch alone does NOT: it keeps the encoder step (a mixed state not to record in).
 cd /d "%~dp0"
 if not exist ".venv\Scripts\python.exe" (
   echo Python environment missing: run setup.cmd first.

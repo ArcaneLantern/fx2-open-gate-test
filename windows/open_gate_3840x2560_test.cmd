@@ -1,6 +1,6 @@
 @echo off
-rem FX2 (firmware 1.01): THE 3840x2560 TEST (fourth kit): raw write buffer, sensor step H5 (first scaler 4336x2560), output size, encoder side with the MP4 headers, rear screen; then one read-only dump on MOVIE. Expected: 3840x2560 clips of the whole 3:2 sensor area. XAVC HS 4K or XAVC S 4K, 23.98p, SteadyShot Off. Start from a cold boot on STILL. NOT YET RUN ON AN FX2.
-rem WRITES into the camera's memory (not firmware, not settings). A cold boot (battery out for 10 seconds) returns it to stock; whether the power switch alone does on the FX2 is not known.
+rem FX2 (firmware 1.01): THE 3840x2560 OPEN GATE (fourth kit; WORKS on an FX2 set to NTSC, GitHub issue 5): raw write buffer, sensor step H5 (first scaler 4336x2560), output size, encoder side with the MP4 headers, rear screen; then one read-only dump on MOVIE. 3840x2560 clips of the whole 3:2 sensor area. XAVC HS 4K or XAVC S 4K, 23.98p (on a PAL-set camera it takes the PAL step P5 and 25p), SteadyShot Off. Start from a cold boot on STILL.
+rem WRITES into the camera's memory (not firmware, not settings). A cold boot (battery out for 10 seconds) returns it to stock. The power switch alone does NOT: it keeps the encoder step (a mixed state not to record in).
 cd /d "%~dp0"
 if not exist ".venv\Scripts\python.exe" (
   echo Python environment missing: run setup.cmd first.

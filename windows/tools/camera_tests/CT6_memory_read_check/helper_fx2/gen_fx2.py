@@ -27,10 +27,13 @@ import build_ogfile  # noqa: E402
 import parse_dmmcfg  # noqa: E402
 
 BASE = 0x108000
-LABEL = "fx2read_v4"                                  # v2 (2026-11-26, after the first FX2 test): test-design targets, DMM workspace, snapshot head;
+LABEL = "fx2read_v5"                                  # v2 (2026-11-26, after the first FX2 test): test-design targets, DMM workspace, snapshot head;
                                                       # v3 (2026-11-26, after test 2 worked): the saved output records (page 0x15cd000)
                                                       # v4 (2026-11-26, after test 3 crashed): a second test design per site (TEST2: ogh2560_fx2_v1),
                                                       # the fallback's code word (soft), the page of the resize margin words (0x190f000)
+                                                      # v5 (2026-11-27, PAL, GitHub issue 5): mode 0x880's sensor cells and stored record
+                                                      # (pal_*: the 25p mode of a PAL-set FX2), in the check only (the dump has no room
+                                                      # under the 65,520-byte upload limit; its record pages show the 0x880 record)
 # coprocessor addresses a read may have: its logs (tomco.txt, the A7 IV's), image and RAM tables, and (v2) the snapshot debug image's first
 # pages (/cp/tomco.txt: snapshotdbg_addr=0x09A21E00, snapshotdbg_size=0x03000000, inside memcfg=0x7000000@0x09000000:uc)
 CP_LO, CP_HI = 0xC0000, 0x9B00000
@@ -79,9 +82,13 @@ DUMP_LAST = (("snapshot", 0x9A21000, 4),)
 # v2: a sensor site may hold a test design's bytes instead (reported TEST); v4: a second one (reported TEST2), ogh2560_fx2_v1, the fourth
 # kit's sensor-side design (ogsq_fx2_v1 with records whose first scaler gives 4336x2560)
 TEST_DESIGNS = ("fhband_fx2_v1", "ogh2560_fx2_v1")
+# v5: the PAL designs (mode 0x880). Their picture records are the shared pair, already sites (TARGET = ogsq880_fx2_v1's, TEST2 =
+# ogh2560880_fx2_v1's, the same bytes as ogsq_fx2_v1's and ogh2560_fx2_v1's); their own sites are mode 0x880's 11 cells and stored record
+PAL_DESIGNS = ("ogsq880_fx2_v1", "ogh2560880_fx2_v1")
 FEHOLD = "fehold_fx2_v1"                             # v4: the fallback's one code word (soft: reported, not counted)
 RESIZE_VIEW, OUTPUT_TEMPLATE = 0x15CD520, 0x15CDEF8  # 0xbc6ebc / 0xbc75de return them
-MARGIN_WORDS, MARGIN_SWITCH = 0x190F46E, 0x190FCD0   # 0xbd6f34: eight u16 words (..0x190f47c); a non-zero switch makes it return 0
+MARGIN_WORDS, MARGIN_SWITCH = 0x190F46E, 0x190FCD0   # 0xbd6f34: eight u16 words (..0x190f47c); the switch word (3 on every FX2 dump) does NOT
+                                                     # turn the margin off: with SteadyShot Active the margin 7208 applied at switch 3 (issue 5)
 
 
 def first_scaler_size(left, right):
@@ -110,8 +117,9 @@ def main():
     assert fl["artifact_sha256"] == {"libmpr.so": hashlib.sha256(lm).hexdigest(), "av-cam.bin": hashlib.sha256(av).hexdigest()}
     out, blobs = [], []
 
-    def blob(b):
-        blobs.append(f"static const unsigned char B{len(blobs)}[] = {c_bytes(b)};")
+    def blob(b, check_only=False):
+        text = f"static const unsigned char B{len(blobs)}[] = {c_bytes(b)};"
+        blobs.append(f"#if !DUMP\n{text}\n#endif" if check_only else text)
         return f"B{len(blobs) - 1}"
 
     out.append(f'#define FX2_LABEL "{LABEL}"\n#define CP_LO {CP_LO:#x}U\n#define CP_HI {CP_HI:#x}U\n#define AVCAM_PHYS {AVCAM_PHYS:#x}UL\n'
@@ -141,6 +149,21 @@ def main():
     assert int(sr["address"], 16) == RECS + og["mode_index"] * REC
     # soft: the camera fills parts of this record at run time, so it need not equal the emulated one; reported, not counted
     sites.append(("stored_record", int(sr["address"], 16), bytes.fromhex(sr["stock"]), bytes.fromhex(sr["design"]), 1))
+    # v5, check only: mode 0x880's cells (hard: image tables, stock until a PAL step writes them) and its stored record (soft, as above)
+    pq, pp = (design(n) for n in PAL_DESIGNS)
+    assert pq["artifact_sha256"] == pp["artifact_sha256"] == sha_cp and pq["mode_id"] == pp["mode_id"] == "0x880" and pq["mode_index"] == pp["mode_index"] == 9
+    cells = lambda d: [q for q in d["patches"] if q["kind"] == "S"]
+    recs_ = lambda d: [q["new"] for q in d["patches"] if q["kind"] == "R"]
+    assert cells(pq) == cells(pp) and pq["stored_record"]["design"] == pp["stored_record"]["design"] and recs_(pq) == recs_(og)
+    assert recs_(pp) == recs_(design(TEST_DESIGNS[1])), "the PAL real-rows records are not TEST2's"
+    assert not {int(q["addr"], 16) for q in cells(pq)} & {int(q["addr"], 16) for q in og["patches"]}
+    for q in cells(pq):
+        a, old, new = int(q["addr"], 16), bytes.fromhex(q["old"]), bytes.fromhex(q["new"])
+        assert cp[a - BASE:a - BASE + len(old)] == old and len(old) == len(new)
+        sites.append(("pal_" + q["note"].split(" ")[0], a, old, new, 0, "pal"))
+    psr = pq["stored_record"]
+    assert int(psr["address"], 16) == RECS + 9 * REC
+    sites.append(("pal_stored_record", int(psr["address"], 16), bytes.fromhex(psr["stock"]), bytes.fromhex(psr["design"]), 1, "pal"))
     for s in oz["sites"]:                                 # soft: the size table is zero until a movie mode has run
         sites.append(("outsize", int(s["ram_address"], 16), bytes.fromhex(s["old"]), bytes.fromhex(s["new"]), 1))
     for k, g in enumerate(oz["guards"]):
@@ -159,20 +182,23 @@ def main():
     for k, s in enumerate(dm["sites"]):                   # the memory manager's RAM copy is filled from DmmCfg.bin at start-up: not soft
         kind = "size" if int.from_bytes(bytes.fromhex(s["old"]), "little") == 27864320 else "key"
         sites.append((f"rawbuf_{kind}{k}", int(s["ram_address"], 16), bytes.fromhex(s["old"]), bytes.fromhex(s["new"]), 0))
-    pages = {x & ~0xFFF for _, a, o, _, _ in sites for x in (a, a + len(o) - 1) if a < BASE + len(cp)}
+    sites = [s if len(s) == 6 else s + ("",) for s in sites]
+    pages = {x & ~0xFFF for _, a, o, _, _, _ in sites for x in (a, a + len(o) - 1) if a < BASE + len(cp)}
     assert not any(p in pages for p in ID_PAGES), "an identity page holds a design site"
     rows = [f"    {{{a:#x}, {c_bytes(hashlib.sha256(cp[a - BASE:a - BASE + 4096]).digest())}}}," for a in ID_PAGES]
     out.append("static const struct id_page id_pages[] = {\n" + "\n".join(rows) + "\n};")
     rows = []
-    for name, a, old, new, soft in sites:
+    for name, a, old, new, soft, fam in sites:
+        co = fam == "pal"                                 # v5: check only
         assert CP_LO <= a and a + len(old) <= CP_HI and len(old) <= 3072
         # a test design's bytes at this site, in TEST_DESIGNS' order (TEST, TEST2); none where they equal the design's own (TARGET). The second
         # one is carried as its SHA-256: with both records' 6,000 bytes the library would pass the 65,520 bytes one upload packet holds
         als = [x if x != new else None for x in alt.get(a, [])] if not name.startswith(("outsize", "screen", "rawbuf", "fehold")) else []
         als = (als + [None, None])[:2]
         assert len(alt.get(a, [])) <= 2 and all(x is None or len(x) == len(old) for x in als)
-        rows.append(f'    {{"{name}", {a:#x}, {len(old)}, {blob(old)}, {blob(new) if new is not None else "0"}, {soft}, '
-                    f'{blob(als[0]) if als[0] is not None else "0"}, {blob(hashlib.sha256(als[1]).digest()) if als[1] is not None else "0"}}},')
+        row = (f'    {{"{name}", {a:#x}, {len(old)}, {blob(old, co)}, {blob(new, co) if new is not None else "0"}, {soft}, '
+               f'{blob(als[0], co) if als[0] is not None else "0"}, {blob(hashlib.sha256(als[1]).digest(), co) if als[1] is not None else "0"}}},')
+        rows.append(f"#if !DUMP\n{row}\n#endif" if co else row)
     out.append("static const struct cp_site cp_sites[] = {\n" + "\n".join(rows) + "\n};")
     # ---- main-processor sites
     lmr, avr, av_hi = [], [], 0
@@ -212,10 +238,10 @@ def main():
     facts = {"label": LABEL, "cp_lo": CP_LO, "cp_hi": CP_HI, "avcam_phys": AVCAM_PHYS, "avcam_reserve": AVCAM_RESERVE,
              "id_files": {n: hashlib.sha256((EX / p).read_bytes()).hexdigest() for n, p in ID_FILES.items()},
              "id_pages": {hex(a): hashlib.sha256(cp[a - BASE:a - BASE + 4096]).hexdigest() for a in ID_PAGES},
-             "cp_sites": [{"name": n, "address": hex(a), "length": len(o), "soft": s} for n, a, o, _, s in sites],
+             "cp_sites": [{"name": n, "address": hex(a), "length": len(o), "soft": s, "check_only": fm == "pal"} for n, a, o, _, s, fm in sites],
              "lm_sites": len(lmr), "av_sites": len(avr), "av_guards": [g[0] for g in guards], "dump_ranges": [[n, hex(a), k] for n, a, k in dump_ranges],
              "designs": {d["design"]: hashlib.sha256((DES / (d["design"] + ".json")).read_bytes()).hexdigest()
-                         for d in (og, oz, fl, sc, dm, fh) + tuple(design(tn) for tn in TEST_DESIGNS)}}
+                         for d in (og, oz, fl, sc, dm, fh) + tuple(design(tn) for tn in TEST_DESIGNS + PAL_DESIGNS)}}
     (HERE / "fx2_expected.json").write_text(json.dumps(facts, indent=1) + "\n", encoding="utf8", newline="\n")
     # ---- what the PC needs to read a dump without the firmware files
     matrix = []
@@ -236,6 +262,9 @@ def main():
            "mode_ids": [hex(x) for x in struct.unpack_from("<%dI" % NMODES, cp, IDS - BASE)], "records_address": hex(RECS), "record_size": REC,
            "emulated_stock_records": {m: v["record"] for m, v in emu.items()}, "size_table_address": hex(SIZE_TABLE),
            "stored_record_design": {"mode": og["mode_id"], "index": og["mode_index"], "stock": sr["stock"], "design": sr["design"]},
+           # v5 (PAL): mode 0x880's stored record, stock (from the 50 Hz input table) and as the PAL designs make it
+           "stored_record_design_pal": {"mode": pq["mode_id"], "index": pq["mode_index"], "stock": psr["stock"], "design": psr["design"],
+                                        "designs": list(PAL_DESIGNS)},
            "screen_words": [{"address": s["ram_address"], "stock": s["old"], "new": s["new"], "note": s.get("note", "")} for s in sc["sites"]],
            "screen_design": sc["design"],
            "raw_write_buffer": [{"address": s["ram_address"], "stock": s["old"], "new": s["new"]} for s in dm["sites"]],
@@ -252,7 +281,9 @@ def main():
                                    "first-scaler size, output size / (1 - margin)) at +0x3c/+0x3e (0xbd3a32). If that is more than the records "
                                    "give, the second scaler is handed a size the first scaler does not deliver (the L16 crash of 2026-11-26)"},
            "margin_words": {"address": hex(MARGIN_WORDS), "count": 8, "switch": hex(MARGIN_SWITCH),
-                            "note": "0xbd6f34 returns one of these u16 words (of 0x10000) when its mode arguments say so, 0 otherwise or when the switch is not zero"},
+                            "note": "0xbd6f34 returns one of these u16 words (of 0x10000) when its mode arguments say so (SteadyShot Active: 7208, "
+                                    "issue 5), 0 otherwise. The switch word does not turn it off (switch 3 with the margin applied); whether a margin "
+                                    "is in use shows in the resize view: its first scaler above both the records' and the output's"},
            "dmm": {"workspace_pointer": "0x192fc28", "units_pointer": "0x192f77c", "workspace_expected": "0x21a5d18", "units_at": 0x107E0,
                    "workspace_bytes": 0x35230, "objects": 0x580, "object_bytes": 0x50, "handles": 0x3FF, "handle_bytes": 0x40,
                    "scene_index_at": 0x33410, "scene_stack_at": 0x33418, "group_use_at": 0x33428,

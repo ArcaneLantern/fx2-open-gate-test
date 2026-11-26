@@ -322,6 +322,97 @@ def main():
         r, t = go(H5, mem, h_allowed, lose=lose)
         ok(not r.bad and "NOT DONE" in t and hstate(mem) == "stock" and changed_only(mem, before, {}), f"H5 with line write {lose} lost: every site put back")
 
+    # ---- Q5/Q6, P5/P6 (fifth kit, 2026-11-27, PAL): mode 0x880. The camera models here carry the stored records a real FX2 left in its
+    # dump pages (0x24dd000..0x24e1000): a PAL-set FX2 (GitHub issue 5, stock, STILL) and an NTSC one (first test, stock). On PAL the
+    # 0x8c0 record is the 24.00p one, so the 0x8c0 libraries must refuse there; on NTSC the 0x880 record is not the 50 Hz one, so the
+    # 0x880 libraries must refuse there.
+    EVID = ROOT / "evidence/fx2"
+    DUMPS = {"PAL": EVID / "tester_2026-11-26_pal/zip/camera_private/CT6_20261126T203351Z_fx2_dump",
+             "NTSC": EVID / "tester_2026-11-25/zip/camera_private/CT6_20261125T201948Z_fx2_dump"}
+
+    def allowed_of(dz):
+        out, i = {}, dz["mode_index"]
+        for p_ in dz["patches"]:
+            a = int(p_["addr"], 16)
+            for k, (o, n) in enumerate(zip(bytes.fromhex(p_["old"]), bytes.fromhex(p_["new"]))):
+                if o != n:
+                    out[a + k] = (o, n)
+        s_, n_ = bytes.fromhex(dz["stored_record"]["stock"]), bytes.fromhex(dz["stored_record"]["design"])
+        for k in range(REC):
+            if s_[k] != n_[k]:
+                out[RECS + i * REC + k] = (s_[k], n_[k])
+        return out
+
+    def state_of(mem, al):
+        vals = [(mem.read(a, 1)[0], pr) for a, pr in al.items()]
+        return "stock" if all(v == pr[0] for v, pr in vals) else "new" if all(v == pr[1] for v, pr in vals) else "mixed"
+
+    def camera_dump(family):
+        m = Mem(image)
+        m.write(IMAGER, struct.pack("<I", CTRL))
+        m.write(CTRL + CTRL_DRVPARAM, struct.pack("<I", OBJ))
+        m.write(OBJ, struct.pack("<6I", VTABLE, COUNT, IDS, 0, RECS, 0xE94530))
+        pages = sorted(DUMPS[family].glob("cp_records_*.bin"))
+        assert len(pages) == 4, family
+        for pg in pages:
+            m.write(int(pg.stem.split("_")[-1], 16), pg.read_bytes())
+        return m
+    dq, dp = design("ogsq880_fx2_v1"), design("ogh2560880_fx2_v1")
+    assert dq["mode_id"] == dp["mode_id"] == "0x880" and dq["mode_index"] == dp["mode_index"] == 9 and dq["stored_record"]["address"] == "0x24de61c"
+    assert dp["stored_record"]["design"] == dq["stored_record"]["design"]
+    q_allowed, p_allowed = allowed_of(dq), allowed_of(dp)
+    in_pair = lambda a: any(r <= a < r + 3000 for r in (0xDF9958, 0xDFA510))
+    cells = lambda al: {a for a in al if not in_pair(a) and not RECS <= a < RECS + COUNT * REC}
+    qp_diff = {a for a in set(q_allowed) | set(p_allowed) if q_allowed.get(a) != p_allowed.get(a)}
+    ok(qp_diff and all(in_pair(a) for a in qp_diff) and cells(q_allowed) == cells(p_allowed) and not cells(q_allowed) & cells(allowed_of(d))
+       and len(cells(q_allowed)) == len(cells(allowed_of(d))),
+       f"ogh2560880_fx2_v1 differs from ogsq880_fx2_v1 only inside the two records ({len(qp_diff)} bytes); the 0x880 cells are other bytes than L5's 0x8c0 cells")
+    Q5, Q6, P5, P6 = lib("Q5"), lib("Q6"), lib("P5"), lib("P6")
+    for family in ("PAL", "NTSC"):
+        mem = camera_dump(family)
+        ok(state_of(mem, q_allowed) == ("stock" if family == "PAL" else "mixed") and state_of(mem, allowed) == ("mixed" if family == "PAL" else "stock"),
+           f"the {family} FX2's records: mode 0x880 {'stock for' if family == 'PAL' else 'not'} the PAL designs, mode 0x8c0 {'not' if family == 'PAL' else 'stock for'} the NTSC designs")
+    for name_, L_, U_, al in (("Q5 (ogsq880_fx2_v1)", Q5, Q6, q_allowed), ("P5 (ogh2560880_fx2_v1)", P5, P6, p_allowed)):
+        mem = camera_dump("PAL")
+        before = mem.snapshot()
+        r, t = go(L_, mem, al)
+        ok(not r.bad and "DONE: all 14 sites hold the target bytes (apply)" in t and state_of(mem, al) == "new" and changed_only(mem, before, al),
+           f"{name_} on the PAL FX2's records: 13 sites and the stored record of mode 0x880 new, nothing else changed ({r.n_writes} line writes)")
+        r, t = go(L_, mem, al)
+        ok(not r.bad and "NOTHING TO DO" in t and r.n_writes == 0, f"{name_[:2]} again: nothing to do, no write")
+        r, t = go(U_, mem, al)
+        ok(not r.bad and "(put back)" in t and "DONE" in t and state_of(mem, al) == "stock" and changed_only(mem, before, {}),
+           f"{name_[:1]}6: the PAL FX2's records and cells as they were, byte for byte")
+        for lose in (1, 14):
+            mem = camera_dump("PAL")
+            before = mem.snapshot()
+            r, t = go(L_, mem, al, lose=lose)
+            ok(not r.bad and "NOT DONE" in t and state_of(mem, al) == "stock" and changed_only(mem, before, {}), f"{name_[:2]} with line write {lose} lost: every site put back")
+        mem = camera_dump("NTSC")
+        before = mem.snapshot()
+        r, t = go(L_, mem, al)
+        ok(not r.bad and r.n_writes == 0 and "nothing is written" in t and changed_only(mem, before, {}),
+           f"{name_[:2]} on the NTSC FX2's records (mode 0x880 not the 50 Hz record): refused, nothing written")
+    for name_, L_, al in (("L5", L5, allowed), ("H5", H5, h_allowed)):
+        mem = camera_dump("PAL")
+        before = mem.snapshot()
+        r, t = go(L_, mem, al)
+        ok(not r.bad and r.n_writes == 0 and "nothing is written" in t and changed_only(mem, before, {}),
+           f"{name_} on the PAL FX2's records (mode 0x8c0 is the 24.00p record there): refused, nothing written")
+    mem = camera_dump("NTSC")
+    r, t = go(L5, mem, allowed)
+    ok(not r.bad and "DONE" in t and state_of(mem, allowed) == "new", "L5 on the NTSC FX2's records: DONE (the real NTSC records are the stock the design expects)")
+    r, t = go(Q5, mem, q_allowed)
+    ok(not r.bad and r.n_writes == 0 and "nothing is written" in t, "Q5 on the NTSC FX2 holding L5's state: refused, nothing written")
+    for first, second, al1, al2, label in ((Q5, P5, q_allowed, p_allowed, "P5 on a camera holding Q5's state"),
+                                           (P5, Q5, p_allowed, q_allowed, "Q5 on a camera holding P5's state"),
+                                           (P5, Q6, p_allowed, q_allowed, "Q6 on a camera holding P5's state")):
+        mem = camera_dump("PAL")
+        r, t = go(first, mem, al1)
+        snap = mem.snapshot()
+        r, t = go(second, mem, al2)
+        ok(not r.bad and r.n_writes == 0 and state_of(mem, al1) == "new" and changed_only(mem, snap, {}), f"{label}: nothing written (each design is put back by its own library)")
+
     # ---- L13 / L14: the memory manager
     dd = design("dmmwb4688_fx2_v1")
     E.DESIGN = "dmmwb4688_fx2_v1"

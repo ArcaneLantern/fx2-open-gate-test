@@ -4,6 +4,10 @@ workspace and the first pages of the crash snapshot image.)
 (Fourth kit, 2026-11-26, after L13 + L5 + L16 crashed on MOVIE: read helper fx2read_v4, step pairs H5/H6 (ogh2560_fx2_v1: records whose
 first scaler gives 4336x2560) and F16/F17 (fehold_fx2_v1, the fallback's code word); the dump decodes the saved resize view and the
 output records at their real address 0x15cdef8.)
+(Fifth kit, 2026-11-27, PAL and GitHub issue 5: read helper fx2read_v5 (the check also reports mode 0x880's cells and stored record,
+pal_*), step pairs Q5/Q6 (ogsq880_fx2_v1: the squeeze for mode 0x880, the 25p mode of a PAL-set FX2) and P5/P6 (ogh2560880_fx2_v1: the
+real rows for mode 0x880); the report says which sensor-side design is in place, whether the camera is set to NTSC or PAL, and warns of
+the state the power switch leaves (coprocessor stock, main processor still holding L19).)
 
   python fx2_run.py check --dry-run | --selftest
   python fx2_run.py dump  --dry-run | --selftest
@@ -43,8 +47,9 @@ import ct6_level1_run as R  # noqa: E402
 
 FIRMWARE, MODEL, BUILD = "1.01", "ILME-FX2", "fx2_101"
 S3 = HERE / "helper_fx2"                       # this kit's folder (the name S3 is kept from s3_run.py)
-PINS = {"check": ("libJit_fx2_check.so", "97516ead690e876181fa41687d252cdd97c5da053383a7e884f7669da30ceff6"),      # fx2read_v4 (2026-11-26, fourth kit)
-        "dump": ("libJit_fx2_dump.so", "f4cb345a68ff26944aba2241edf34f2d4ff6c55404cda60fe3277990e5248efe")}
+PINS = {"check": ("libJit_fx2_check.so", "a5bfb54714b684ada9e24076be1a007f77c2caa1b058c89c34d07984760c87cb"),      # fx2read_v5 (2026-11-27, fifth kit: PAL sites)
+        "dump": ("libJit_fx2_dump.so", "8ad8e1ff4a341ab2b8ce2118d0ad6a17076d72b3aaa8be33e025cf6159f48345")}
+# fx2read_v4 (fourth kit, ran on two FX2s 2026-11-26): check 97516ead..., dump f4cb345a...
 # fx2read_v3 (third kit, ran on the tester's FX2 2026-11-26): check 696c9be6..., dump 6a234dde...
 # fx2read_v2 (second kit, ran on the tester's FX2 2026-11-26): check 9dd469a2..., dump 1f51dc2a...
 # the first kit's read helper (fx2read_v1, 2026-11-25; ran on the first tester's FX2): check e3838945..., dump 5008ec3a...
@@ -71,6 +76,13 @@ WRITE_STEPS = {
     # scaler gives 4336x2560. It takes L5's place.
     "H5": ("libJit_fx2_H5.so", "47be321cecb37fcba26c0e2b7e8017c931ad339d37bf4e131d3d46f3ed6f7bf5", "apply the sensor-side design ogh2560_fx2_v1 (L5's sensor cells and stored record, with records whose first scaler gives 4336x2560: the A7 IV's ogh2560_v1)"),
     "H6": ("libJit_fx2_H6.so", "e459d65ca595895933165fa2b3a78de136789d69e0c825a749f32c4e09a74528", "put back the sensor-side design ogh2560_fx2_v1"),
+    # Q5/Q6, P5/P6 (fifth kit, 2026-11-27): PAL. On a PAL-set FX2 4K 25p runs drive mode 0x880 and its stored record comes from the 50 Hz
+    # input table, so the 0x8c0 steps (L5, H5) refuse there and these refuse on NTSC. Q = L5 moved to mode 0x880 (the A7 IV's ogsq880_v1, which
+    # works on a PAL A7 IV), P = H5 moved to mode 0x880 (the record pair is shared by 0x880 and 0x8c0)
+    "Q5": ("libJit_fx2_Q5.so", "04c9fd0fbec1206cb14f11828cffd82e791aa21713b52c4fc332d021cce8f783", "apply the sensor-side design ogsq880_fx2_v1 for PAL (mode 0x880, 25p: sensor cells, two records, the stored record; L5 moved to 0x880)"),
+    "Q6": ("libJit_fx2_Q6.so", "7a8ae5846d90d92599df0fcd32ce1cac9bbb2c8cbf6ea9ef79916560600e13e0", "put back the sensor-side design ogsq880_fx2_v1 (PAL)"),
+    "P5": ("libJit_fx2_P5.so", "b3b6094d843d59c514e67915019025dba7f23830051648334ee2a81e5f4653d9", "apply the sensor-side design ogh2560880_fx2_v1 for PAL (mode 0x880, 25p: H5 moved to 0x880, records whose first scaler gives 4336x2560)"),
+    "P6": ("libJit_fx2_P6.so", "5b892e4c904507cf3e610852b06239d77c077164ae4386ffae480cd6b806271f", "put back the sensor-side design ogh2560880_fx2_v1 (PAL)"),
     "L16": ("libJit_fx2_L16.so", "744dd7eb1b8f0cd79fde6f508b39988e9c92bc37ef1f10f30783ce2ae2ee441a", "apply the output size outsz2560_fx2_v1 (one word)"),
     "L17": ("libJit_fx2_L17.so", "d2d62a12fc2f99f69423fa42d96e9650be6c8aba30982b11d281a5925d2e5098", "put back the output size outsz2560_fx2_v1"),
     # Fourth kit, the FALLBACK (with L5, not with H5): the same level 16/17 code with one CODE word of the resize set-up, 0x51fefa
@@ -88,7 +100,7 @@ WRITE_STEPS = {
     "S17": ("libJit_fx2_S17.so", "34075aa0bf39d67ca5623bc0913599fd3c2ada3916bb2ba99d63bc214339b0d8", "put back the screen words lcd32dsq_fx2_v1"),
 }
 PINS.update({k: v[:2] for k, v in WRITE_STEPS.items()})
-LEVELS.update({k: {"L": 200, "S": 300, "N": 500, "B": 700, "H": 800, "F": 900}[k[0]] + int(k[1:]) for k in WRITE_STEPS})
+LEVELS.update({k: {"L": 200, "S": 300, "N": 500, "B": 700, "H": 800, "F": 900, "Q": 1000, "P": 1100}[k[0]] + int(k[1:]) for k in WRITE_STEPS})
 WHICH = "check"
 FULL_HEIGHT_COLUMN = 5          # the register-matrix column of the full-height read-out (ogsq_fx2_v1's S0: mode 0x8c0 column 6 -> 5, as on the A7 IV)
 
@@ -138,12 +150,20 @@ def check_result(data):
         m = re.match(r"site (\S+) (0x[0-9a-f]+) len (\d+)(?: bytes (?:differing from stock )?(\S+))?  (STOCK|TARGET|TEST2?|OTHER.*|NOT READ)$", ln)
         if m:
             sites.append({"name": m.group(1), "address": m.group(2), "length": int(m.group(3)), "shown": m.group(4), "state": m.group(5)})
+    # v5: the bytes the helper prints for a large site that is neither stock nor a design's (line "other <name> <hex>"): the stored records,
+    # whose run-time bytes always differ on a camera, are judged by the design's own bytes from these
+    other_bytes = {}
+    for ln in lines:
+        if ln.startswith("other ") and ln.count(" ") == 2:
+            _, n_, hx_ = ln.split(" ")
+            if re.fullmatch(r"[0-9a-f]+", hx_):
+                other_bytes[n_] = hx_
     s3 = {"header": head, "verdict": verdict, "ready": verdict.startswith("VERDICT READY"),
           "identity_same": count(r"SAME as the 1\.01 update$"), "identity_differs": count(r"DIFFERS from the 1\.01 update$"),
           "coprocessor_sites": sites, "libmpr_sites": [ln for ln in lines if ln.startswith("lm ")],
           "avcam_stock": count(r"^av .*  STOCK$"), "avcam_target": count(r"^av .*  TARGET$"), "avcam_other": count(r"^av .*  OTHER$"),
           "avcam_guards": [ln for ln in lines if ln.startswith("guard ")], "problem_lines": [ln for ln in lines if ln.startswith("!!")],
-          "pages": len(pages)}
+          "pages": len(pages), "other_bytes": {k: v for k, v in other_bytes.items() if "stored_record" in k}}
     cmd = re.search(r"== file /proc/cmdline\n(.*?)\n== end", text, re.S)
     ver = re.search(r"== file /proc/version\n(.*?)\n== end", text, re.S)
     s3["kernel_command_line"], s3["kernel_version"] = (cmd.group(1).strip() if cmd else None), (ver.group(1).strip() if ver else None)
@@ -211,6 +231,13 @@ def decode_pages(pages):
         b, st, dz = bytes.fromhex(v["record"]), bytes.fromhex(sd["stock"]), bytes.fromhex(sd["design"])
         offs = [k for k in range(size) if st[k] != dz[k]]
         out["stored_record_design_bytes"] = {"stock": sum(b[k] == st[k] for k in offs), "design": sum(b[k] == dz[k] for k in offs), "of": len(offs)}
+    # v5 (PAL): mode 0x880's record against the PAL designs' stock (the 50 Hz one) and design bytes
+    sp = ref.get("stored_record_design_pal")
+    v = recs.get(sp["mode"]) if sp else None
+    if v:
+        b, st, dz = bytes.fromhex(v["record"]), bytes.fromhex(sp["stock"]), bytes.fromhex(sp["design"])
+        offs = [k for k in range(size) if st[k] != dz[k]]
+        out["stored_record_design_pal_bytes"] = {"stock": sum(b[k] == st[k] for k in offs), "design": sum(b[k] == dz[k] for k in offs), "of": len(offs)}
     t = mem(int(ref["size_table_address"], 16), 128)
     if t is not None:
         out["size_table"] = [list(struct.unpack_from("<HHI", t, 8 * k)) for k in range(16)]
@@ -376,7 +403,7 @@ def run_helper(data):
     try:
         import emu_fx2
     except Exception:
-        text = "fx2read fx2read_v4 %s for ILME-FX2 1.01; read-only\n== file /proc/version\nLinux (simulated)\n\n== end 18 bytes\n== summary\nVERDICT READY (canned)\n== done\n" % WHICH
+        text = "fx2read fx2read_v5 %s for ILME-FX2 1.01; read-only\n== file /proc/version\nLinux (simulated)\n\n== end 18 bytes\n== summary\nVERDICT READY (canned)\n== done\n" % WHICH
         return text.encode(), "canned"
     r, text = emu_fx2.run(bytes(data))
     if r.bad:
@@ -427,7 +454,8 @@ def selftest(lib):
     else:
         check(f.get("ready") and not f.get("identity_differs"), "normal run: the %s helper reports a stock 1.01 camera as READY" % sim.how)
     if sim.how == "emulated":
-        check(len(f["coprocessor_sites"]) == len(expected()["cp_sites"]) and f["avcam_stock"] == 101 and len(f["libmpr_sites"]) == expected()["lm_sites"] == 6,
+        want_sites = [x for x in expected()["cp_sites"] if not (WHICH == "dump" and x.get("check_only"))]     # v5: pal_* in the check only
+        check(len(f["coprocessor_sites"]) == len(want_sites) and f["avcam_stock"] == 101 and len(f["libmpr_sites"]) == expected()["lm_sites"] == 6,
               "normal run: every coprocessor site, 6 libmpr (4 rows, 2 MP4 header heights) and 101 av-cam sites are reported")
         check(sum(1 for x in f["coprocessor_sites"] if x["name"].startswith("rawbuf_") and x["state"] == "STOCK") == 4,
               "normal run: the raw write buffer's four memory-manager words are reported STOCK")
@@ -453,6 +481,25 @@ def selftest(lib):
                   and len(dp.get("frame_rectangles_16x9_picture", {})) == 3 and dp.get("desqueeze_words") == "stock"
                   and dp.get("screen_words") == {"stock": 18, "new": 0, "other": 0} and "panel_types" in dp,
                   "dump: the display pages decode (fit words, the three tables' rows, de-squeeze words, the 18 screen words, panel types)")
+        cs = camera_state(f)
+        check(cs["family"].startswith("NTSC") and cs["sensor_side"] == "none (stock)" and cs["encoder_side"] == "stock" and not cs["warning"],
+              "normal run: the report reads the model as an NTSC camera with nothing applied, no warning")
+        g = dict(f, coprocessor_sites=[dict(x) for x in f["coprocessor_sites"]], avcam_stock=0, avcam_target=101, avcam_other=0)
+        check(camera_state(g)["warning"] is not None, "the power-switch state (coprocessor stock, L19 applied): the report warns")
+        for x in g["coprocessor_sites"]:
+            if re.match(r"(pal_)?S\d+$", x["name"]) or x["name"] in ("record_left", "record_right", "pal_stored_record"):
+                x["state"] = "TARGET" if x["name"].startswith("pal_") or x["name"].startswith("record_") else x["state"]
+            if x["name"] == "pal_stored_record":
+                x["state"] = "TARGET"
+        if WHICH == "check":
+            check(camera_state(g)["sensor_side"].startswith("Q5") and camera_state(g)["family"].startswith("PAL") and not camera_state(g)["warning"],
+                  "a PAL camera with Q5 and L19 (model): read as Q5 on PAL, no warning")
+            import emu_fx2
+            for pal, want in (("stock", "none (stock)"), ("squeeze", "Q5 "), ("real", "P5 ")):
+                r_, text_ = emu_fx2.run(bytes(lib), pal=pal)
+                cs_ = camera_state(check_result(text_.encode())["s3"])
+                check(not r_.bad and cs_["family"].startswith("PAL") and cs_["sensor_side"].startswith(want),
+                      "the emulated check on a PAL-set FX2's own records (%s): read as PAL, sensor side %s" % (pal, cs_["sensor_side"]))
     s, sim, stopped = R.simulate(lib, R.body_run, files={R.LIB_PATH.decode(): b"someone else's"})
     check(stopped and W not in R.sent(s) and D not in R.sent(s), "a foreign libJit.so on the camera: stops, nothing written, nothing deleted")
     s, sim, stopped = R.simulate(lib, R.body_run, files={"/tmp_wbshd/readcheck_result.txt": b"old"})
@@ -465,6 +512,63 @@ def selftest(lib):
     check(stopped and R.sent(s).count(D) == 1 and R.LIB_PATH.decode() not in sim.fs, "a camera that cannot load the library: it is still deleted")
     check(len(R.refusals(lib)) == 15, "the guard refuses the 15 listed packets (changed library, other paths, backup, flash and debug writes ...)")
     return done
+
+
+def camera_state(f):
+    """v5: which sensor-side design the coprocessor sites show, whether the camera is set to NTSC or PAL, the encoder side's state, and a
+    warning for the state the power switch leaves on an FX2 (GitHub issue 5: it restarts the coprocessor, so every coprocessor site is
+    stock again, but the main processor keeps L19's sites)."""
+    st = {x["name"]: x["state"] for x in f["coprocessor_sites"]}
+    cells = {st[k] for k in st if re.match(r"S\d+$", k)}
+    pal = {st[k] for k in st if re.match(r"pal_S\d+$", k)}
+    recs = {st.get("record_left"), st.get("record_right")}
+    d = f.get("decoded") or {}
+    ref = reference()
+
+    def by_design_bytes(name, key):
+        """STOCK / TARGET / OTHER for a stored record from the design's own bytes; the site's state when it is already one of those."""
+        s = st.get(name)
+        if s in ("STOCK", "TARGET", "TEST", "TEST2"):
+            return s
+        hx, sd = f.get("other_bytes", {}).get(name), ref.get(key)
+        if not hx or not sd:
+            return None
+        b, st_, dz = bytes.fromhex(hx), bytes.fromhex(sd["stock"]), bytes.fromhex(sd["design"])
+        offs = [k for k in range(len(st_)) if st_[k] != dz[k]]
+        if len(b) != len(st_):
+            return None
+        return "STOCK" if all(b[k] == st_[k] for k in offs) else "TARGET" if all(b[k] == dz[k] for k in offs) else "OTHER"
+    ntsc_rec, pal_rec = by_design_bytes("stored_record", "stored_record_design"), by_design_bytes("pal_stored_record", "stored_record_design_pal")
+    full = lambda x: x and x["of"] and (x["stock"] == x["of"] or x["design"] == x["of"])
+    if pal_rec in ("STOCK", "TARGET") or full(d.get("stored_record_design_pal_bytes")):
+        family = "PAL (mode 0x880's stored record is the 50 Hz one: 25p; use the PAL steps)"
+    elif ntsc_rec in ("STOCK", "TARGET", "TEST", "TEST2") or full(d.get("stored_record_design_bytes")):
+        family = "NTSC (mode 0x8c0's stored record is the 23.98p one: use the NTSC steps)"
+    else:
+        family = "not known from this result"
+    one = lambda s: next(iter(s)) if len(s) == 1 else None
+    c_, p_, r_ = one(cells), one(pal) if pal else "STOCK", one(recs)
+    sensor = {("STOCK", "STOCK", "STOCK"): "none (stock)",
+              ("TARGET", "STOCK", "TARGET"): "L5 ogsq_fx2_v1 (NTSC squeeze)",
+              ("TARGET", "STOCK", "TEST2"): "H5 ogh2560_fx2_v1 (NTSC real rows)",
+              ("TEST", "STOCK", "TEST"): "B5 fhband_fx2_v1 (band test)",
+              ("STOCK", "TARGET", "TARGET"): "Q5 ogsq880_fx2_v1 (PAL squeeze)",
+              ("STOCK", "TARGET", "TEST2"): "P5 ogh2560880_fx2_v1 (PAL real rows)"}.get((c_, p_, r_))
+    if sensor is None and not pal and c_ == "STOCK" and r_ in ("TARGET", "TEST2"):
+        sensor = "the records of a PAL step (Q5/P5) with mode 0x8c0's cells stock: a PAL design, if this is a dump (the dump does not read mode 0x880's cells)"
+    if sensor is None:
+        sensor = "MIXED (cells %s, PAL cells %s, records %s)" % (sorted(x for x in cells if x), sorted(x for x in pal if x) or "-", sorted(x for x in recs if x))
+    encoder = ("applied (L19)" if f["avcam_target"] and not f["avcam_stock"] and not f["avcam_other"] else
+               "stock" if f["avcam_stock"] and not f["avcam_target"] and not f["avcam_other"] else
+               "not read" if not (f["avcam_stock"] or f["avcam_target"] or f["avcam_other"]) else
+               "MIXED (%d stock, %d applied, %d other)" % (f["avcam_stock"], f["avcam_target"], f["avcam_other"]))
+    raw = {st[k] for k in st if k.startswith("rawbuf_")}
+    warn = None
+    if f["avcam_target"] and sensor.startswith("none") and raw == {"STOCK"}:
+        warn = ("WARNING: the encoder side (L19) is still applied but every coprocessor site is stock. This is what the FX2's power switch "
+                "leaves: it restarts the image processor, not the main processor. Do not record in this state. Take the battery out for 10 "
+                "seconds (everything stock), or run the putback, then apply again.")
+    return {"family": family, "sensor_side": sensor, "encoder_side": encoder, "warning": warn, "stored_record_0x8c0": ntsc_rec, "stored_record_0x880": pal_rec}
 
 
 def report(session, facts, which):
@@ -483,6 +587,9 @@ def report(session, facts, which):
     lines += ["  " + ln for ln in f["libmpr_sites"]] + ["  " + ln for ln in f["avcam_guards"]]
     lines.append("  av-cam.bin sites: %d stock, %d target, %d other" % (f["avcam_stock"], f["avcam_target"], f["avcam_other"]))
     lines += ["problem lines:"] + ["  " + ln for ln in f["problem_lines"]] if f["problem_lines"] else ["no problem lines"]
+    cs = camera_state(f)                          # v5
+    lines[3:3] = ["camera set to: %s" % cs["family"], "sensor side in place: %s" % cs["sensor_side"], "encoder side: %s" % cs["encoder_side"]] + \
+                 ([cs["warning"]] if cs["warning"] else [])
     d = f.get("decoded")
     if d:
         sr = d.get("sensor_registers")
@@ -498,6 +605,8 @@ def report(session, facts, which):
             lines.append("  mode 0x8c0: %d bytes differ from the emulation at %s" % (v["bytes_differing_from_emulation"], ", ".join(v["offsets"])))
         if d.get("stored_record_design_bytes"):
             lines.append("  mode 0x8c0, the design's %(of)d bytes: %(stock)d stock, %(design)d as the design" % d["stored_record_design_bytes"])
+        if d.get("stored_record_design_pal_bytes"):          # v5
+            lines.append("  mode 0x880 (PAL 25p), the PAL designs' %(of)d bytes: %(stock)d stock (50 Hz), %(design)d as the design" % d["stored_record_design_pal_bytes"])
         if d.get("size_table"):
             lines.append("movie size table: " + "; ".join("%dx%d id %#x" % tuple(r) for r in d["size_table"]))
         if d.get("raw_write_buffer_words"):
@@ -526,12 +635,25 @@ def report(session, facts, which):
             if "records_in_place" in rv:
                 lines.append("  the picture records in place (%s) give a first scaler of %dx%d: %s"
                              % (rv["records_in_place"], *rv["first_scaler_by_records"],
-                                "the view agrees" if rv["sizes_agree"] else "the view DIFFERS (the second scaler is handed a size the first scaler does not deliver; "
+                                "the view agrees" if rv["sizes_agree"] else
+                                # issue 5: with SteadyShot Active the view's first scaler is raised by the margin word (4336x2877 for 2,560
+                                # rows) and the camera records clean 3840x2560 files; without a margin a difference was the L5 + L16 crash
+                                "the view DIFFERS, by more than the output needs: a margin (SteadyShot Active), which ran on an FX2 with og2560"
+                                if rv["first_scaler"][1] > max(rv["output"][1], rv["first_scaler_by_records"][1]) and rv["output"][1] <= rv["first_scaler_by_records"][1] else
+                                "the view DIFFERS (the second scaler is handed a size the first scaler does not deliver; "
                                 "the view may also be left from an earlier state)"))
         mw = d.get("margin_words")
         if mw:
-            lines.append("resize margin words at %s: %s; switch %d (all zero: the override asks for no more than the output size)"
-                         % (mw["address"], ", ".join(str(x) for x in mw["words"]), mw["switch"]))
+            # Pull request 6, second version: the switch alone does not tell (SteadyShot Active applied 7208 with switch 3, GitHub issue 5),
+            # so judge from the view: the override stores max(records' first scaler, output / (1 - margin)), so a margin is in use when the
+            # view exceeds both.
+            fs = rv and "records_in_place" in rv and (rv["first_scaler"][1], rv["output"][1], rv["first_scaler_by_records"][1])
+            note = ("margin in use: the view asks the first scaler for %d rows for %d output rows, %.1f%%" % (fs[0], fs[1], 100.0 * (1 - fs[1] / fs[0]))
+                    if fs and fs[0] > max(fs[1], fs[2])
+                    else "no margin in use: the view's first scaler is no larger than the records or the output give" if fs
+                    else "whether one is in use shows in the resize view")
+            lines.append("resize margin words at %s: %s; switch %d (%s)"
+                         % (mw["address"], ", ".join(str(x) for x in mw["words"]), mw["switch"], note))
         fh = next((x for x in f["coprocessor_sites"] if x["name"] == "fehold"), None)
         if fh:
             lines.append("fallback code word (fehold_fx2_v1) at %s: %s" % (fh["address"], fh["state"]))
@@ -590,7 +712,7 @@ def main():
     ap.add_argument("--remove-only", action="store_true")
     ap.add_argument("--clear-result", metavar="SHA256", help="first delete the result file of an earlier run from the RAM disk, only if its SHA-256 is this")
     ap.add_argument("--firmware-shown")
-    ap.add_argument("--writes-memory", action="store_true", help="needed for a write step (L13, L14, L5, L6, B5, B6, L16, L17, L19, L20, N19, S16, S17): it changes the running camera's memory")
+    ap.add_argument("--writes-memory", action="store_true", help="needed for a write step (%s): it changes the running camera's memory" % ", ".join(WRITE_STEPS))
     a = ap.parse_args()
     if a.which in WRITE_STEPS and a.go and not (a.dry_run or a.selftest) and not a.writes_memory:
         raise SystemExit("%s is a write step: %s. It needs --writes-memory as well. Use fx2_apply.py. Nothing was sent." % (a.which, WRITE_STEPS[a.which][2]))
@@ -632,7 +754,7 @@ def main():
                 "yes" if out.get("library_sent") else "no",
                 {False: "no (confirmed)", True: "YES", None: "not sent" if not out.get("library_sent") and not a.remove_only else "UNKNOWN"}[out.get("library_on_camera_after")]))
             if a.which in WRITE_STEPS:
-                print("This was a WRITE step. A cold boot (battery out for 10 seconds) undoes everything written. Whether the power switch alone does on the FX2 is not known (on the A7 IV it does not, on the A7S III it does): keep the camera on between steps.")
+                print("This was a WRITE step. A cold boot (battery out for 10 seconds) undoes everything written. The power switch alone does NOT: on the FX2 it puts the image processor's steps back but keeps the encoder step (L19), a mixed state not to record in (GitHub issue 5). Keep the camera on between steps; to undo, use the putback or take the battery out.")
             else:
                 print("Nothing on the camera was changed. Unplug and replug the USB cable before another run; a cold boot (battery out) clears the result file.")
 
