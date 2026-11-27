@@ -40,10 +40,14 @@ PLANS = {
     "og2560": ("check", "L13", "H5", "L16", "L19", "S16"),   # the 3840x2560 open gate (fourth kit's og2560), ran on this FX2 2026-11-26
     "squeeze": ("check", "L13", "L5", "S16"),                 # the squeezed open gate (pull request #3)
     "og57": ("check", "L13", "K5", "K16", "K19", "S16"),      # 5.7K, 5760x3840 (fifth kit's og57; one step per session ran on this FX2 2026-11-27)
+    # LOCAL 2026-11-28: READ-ONLY. The xref scan of the coprocessor code in eleven parts (fx2_run.XREF_PARTS), in one connection.
+    "xrefscan": ("check",) + tuple(F.XREF_PARTS),
 }
 
 
 def what(step):
+    if step in F.XREF_PARTS:
+        return "READ-ONLY xref scan part (fx2read -DDUMP=2): calls to and literals of the display functions, nothing written"
     return F.WRITE_STEPS[step][2] if step in F.WRITE_STEPS else "the read-only check (fx2read): identity, every site stock or target, nothing written"
 
 
@@ -133,7 +137,7 @@ def simulate_batch(plan, libs):
     canned = R.run_helper
 
     def run_helper(data):
-        return (replay, "replayed") if F.WHICH == "check" else canned(data)
+        return (replay, "replayed") if F.WHICH == "check" or F.WHICH in F.XREF_PARTS else canned(data)   # the xref parts answer like the check
     c.use_pmca()
     session = c.Session("simulated", write=False, test="CT6")
     F.use(plan[0])
@@ -190,7 +194,7 @@ def main():
     plan = PLANS[a.plan]
     libs = {}
     for step in plan:
-        if step not in F.WRITE_STEPS and step != "check":
+        if step not in F.WRITE_STEPS and step != "check" and step not in F.XREF_PARTS:
             raise SystemExit("%s is not a step of this kit. Nothing was sent." % step)
         libs[step] = F.use(step)                       # the pinned build, or it stops here
     session, sent = offline_checks(plan, libs)
