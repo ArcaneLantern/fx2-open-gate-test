@@ -122,9 +122,17 @@ WRITE_STEPS = {
     # 1.95:1 (helper/expected_words_dsq15_fx2_v1.h). On top of S16 only (its stock bytes are S16's). Display only. Not run on any camera.
     "A16": ("libJit_fx2_A16.so", "cd6f420299a297aab6c2df3665e3b799946615a4220f42d5a4f04e87d1119886", "LOCAL: De-Squeeze Display 1.3x entry shows 2.25:1 for 1.5x anamorphic lenses (dsq15_fx2_v1, on top of S16)"),
     "A17": ("libJit_fx2_A17.so", "f190f3c211b501d1ea8291439d2092b254c5be7a4be8844450eaafe1e0ac4764", "LOCAL: put back S16's 1.3x shape (1.95:1)"),
+    # LOCAL (2026-11-27) SD-boot test: these WRITE TO FLASH (/setting), not RAM — the first persistent write in this kit. Delivered by the
+    # same guarded Jiritsu path (SHA-pin, one write + deletes, auto-removed), but what the loaded library does (write /setting) the packet
+    # guard cannot police. Recovery: V17, or delete /setting/mode/preload over USB service mode, or a stock firmware update. See FX2_Report/sdboot_test/RUNBOOK.md.
+    "V16": ("libJit_fx2_V16.so", "8c4236211ab1927ecabd0a705db9497309c67e677d2b7b51443e60e55c6f8758", "LOCAL/FLASH: install milestone-1 process-aware preload (marks which processes ld.so.preload loads into, esp. im.elf)"),
+    "V17": ("libJit_fx2_V17.so", "c3f42e5f7b3d7290b9a517ac1570e24bbc5209318c59b14e3125e84fa0228092", "LOCAL/FLASH: remove /etc/ld.so.preload and every /etc fx2* marker (getdents cleanup) + /setting"),
+    "V18": ("libJit_fx2_V18.so", "7119d7ee914eab9b9d2659837cbd8372d02f1f54e46a91033e4ccd994c8aa9eb", "LOCAL: read /etc/fx2_preload_ran and report whether the /etc/ld.so.preload fired (read-only)"),
+    "V20": ("libJit_fx2_V20.so", "2615ed910db1bf1803e69b3cd39b4be1ffff1b458161162922e74818d6f4c3ac", "LOCAL: list /etc processes that loaded the preload (read-only, getdents)"),
+    "V19": ("libJit_fx2_V19.so", "cd3dec720feae11a99207c5f3ae4dfd1181d98dbdddd853d299a19f4373fffcd", "LOCAL: diagnostic - report which processes the preload loaded into (any/im.elf/bootin/sen)"),
 }
 PINS.update({k: v[:2] for k, v in WRITE_STEPS.items()})
-LEVELS.update({k: {"L": 200, "S": 300, "N": 500, "B": 700, "H": 800, "F": 900, "Q": 1000, "P": 1100, "K": 1200, "J": 1300, "I": 1400, "G": 1500, "M": 1600, "Z": 1700, "A": 1800}[k[0]] + int(k[1:])
+LEVELS.update({k: {"L": 200, "S": 300, "N": 500, "B": 700, "H": 800, "F": 900, "Q": 1000, "P": 1100, "K": 1200, "J": 1300, "I": 1400, "G": 1500, "M": 1600, "Z": 1700, "A": 1800, "V": 3400}[k[0]] + int(k[1:])
                for k in WRITE_STEPS})
 WHICH = "check"
 FULL_HEIGHT_COLUMN = 5          # the register-matrix column of the full-height read-out (ogsq_fx2_v1's S0: mode 0x8c0 column 6 -> 5, as on the A7 IV)
