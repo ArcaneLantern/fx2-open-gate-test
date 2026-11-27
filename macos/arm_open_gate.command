@@ -8,13 +8,15 @@ cd "$(dirname "$0")" || exit 1
 PY="$PWD/.venv/bin/python"
 TOOLS="$PWD/../windows/tools/camera_tests/CT6_memory_read_check"
 PRIVATE="$PWD/../windows/camera_private"
+PLAN="${FX2_PLAN:-og2560}"                     # og2560 = 3840x2560, og57 = 5.7K (5760x3840); the _57 launchers set it
+case "$PLAN" in og2560) LABEL="3840x2560";; og57) LABEL="5.7K (5760x3840)";; *) echo "Unknown plan $PLAN"; exit 1;; esac
 done_() { echo; read -r -p "Press Return to close. "; exit "$1"; }
 [ -x "$PY" ] || { echo "Python environment missing: run setup.command first."; done_ 1; }
-"$PY" -I -B "$TOOLS/fx2_batch.py" og2560 --dry-run >/dev/null || { echo "!! The offline checks failed. Nothing was sent."; done_ 1; }
-echo "Arming the FX2 open gate. Your Mac password, once:"
+"$PY" -I -B "$TOOLS/fx2_batch.py" "$PLAN" --dry-run >/dev/null || { echo "!! The offline checks failed. Nothing was sent."; done_ 1; }
+echo "Arming the FX2 open gate ($LABEL). Your Mac password, once:"
 sudo /bin/bash -c '
   trap : INT
-  PY=$1; TOOLS=$2; PRIVATE=$3; U=$SUDO_USER
+  PY=$1; TOOLS=$2; PRIVATE=$3; PLAN=$4; U=$SUDO_USER
   note() { sudo -u "$U" /usr/bin/osascript -e "display notification \"$1\" with title \"FX2 open gate\" sound name \"$2\"" >/dev/null 2>&1; }
   fx2() { /usr/sbin/ioreg -p IOUSB -l -w0 | /usr/bin/awk "/\"idVendor\" = 1356/{v=1} /\"idProduct\" = 3911/{p=1} END{exit !(v&&p)}"; }
   if fx2; then
@@ -32,11 +34,11 @@ sudo /bin/bash -c '
   for v in /Volumes/*; do
     if [ -d "$v/PRIVATE/M4ROOT" ]; then touch "$v/.metadata_never_index" 2>/dev/null; /usr/bin/mdutil -i off "$v" >/dev/null 2>&1; fi
   done
-  "$PY" -I -B "$TOOLS/fx2_batch.py" og2560 --go --firmware-shown 1.01
+  "$PY" -I -B "$TOOLS/fx2_batch.py" "$PLAN" --go --firmware-shown 1.01
   status=$?
   [ -d "$PRIVATE" ] && chown -R "$SUDO_UID:$SUDO_GID" "$PRIVATE"
   if [ $status -eq 0 ]; then note "Done. Unplug, set MOVIE, shoot. Do not power off." "Glass"; else note "Stopped. Nothing more was written. Pull the battery and arm again." "Basso"; fi
-  exit $status' go "$PY" "$TOOLS" "$PRIVATE"
+  exit $status' go "$PY" "$TOOLS" "$PRIVATE" "$PLAN"
 status=$?
 echo
 [ $status -eq 0 ] && echo ">>> Done. Unplug, set MOVIE, shoot (4K 24p, SteadyShot Off). Do not power off." || echo ">>> Stopped (status $status). See the lines above."
