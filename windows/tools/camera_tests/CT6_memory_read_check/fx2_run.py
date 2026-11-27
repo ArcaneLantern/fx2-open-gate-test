@@ -129,6 +129,10 @@ WRITE_STEPS = {
     "V17": ("libJit_fx2_V17.so", "c3f42e5f7b3d7290b9a517ac1570e24bbc5209318c59b14e3125e84fa0228092", "LOCAL/FLASH: remove /etc/ld.so.preload and every /etc fx2* marker (getdents cleanup) + /setting"),
     "V18": ("libJit_fx2_V18.so", "7119d7ee914eab9b9d2659837cbd8372d02f1f54e46a91033e4ccd994c8aa9eb", "LOCAL: read /etc/fx2_preload_ran and report whether the /etc/ld.so.preload fired (read-only)"),
     "V20": ("libJit_fx2_V20.so", "2615ed910db1bf1803e69b3cd39b4be1ffff1b458161162922e74818d6f4c3ac", "LOCAL: list /etc processes that loaded the preload (read-only, getdents)"),
+    "V24": ("libJit_fx2_V24.so", "5f9e95e6f8d09c20e14b0926f577a1a8203ff4da364ca40a61df077c099b0663", "LOCAL: im.elf maps - bytes + lib/ld/marker presence (read-only)"),
+    "V23": ("libJit_fx2_V23.so", "06701a5abb75e786d29163111701b32a12326f5e80d88da9777cd8c935a0111d", "LOCAL: scan im.elf /proc/self/maps for the preload marker - read-only"),
+    "V22": ("libJit_fx2_V22.so", "09b3905827db7ed418a4e0efcca832bf8a3204b877c11a0fd86d2214fa597369", "LOCAL: read im.elf AT_SECURE (auxv) + LD_/GLIBC env - read-only"),
+    "V21": ("libJit_fx2_V21.so", "370c8eb7d3f4bef5559b10c50442629ddeba7a4f931a95406a45c661e60cc055", "LOCAL: live /proc probe of a running im.elf (ns/mnt, root, caps) - read-only, per maccer_acer"),
     "V19": ("libJit_fx2_V19.so", "cd3dec720feae11a99207c5f3ae4dfd1181d98dbdddd853d299a19f4373fffcd", "LOCAL: diagnostic - report which processes the preload loaded into (any/im.elf/bootin/sen)"),
 }
 PINS.update({k: v[:2] for k, v in WRITE_STEPS.items()})
