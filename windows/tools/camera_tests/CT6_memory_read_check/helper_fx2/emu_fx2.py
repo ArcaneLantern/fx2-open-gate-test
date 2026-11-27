@@ -230,6 +230,8 @@ def main():
                                ("no-meta", {"applied": True, "enc": "ogfile2560_hs_s_fx2_v1"}, ("VERDICT READY", "TARGET")),
                                ("test1", {"test": "fhband_fx2_v1"}, ("VERDICT READY", "  TEST")),
                                ("test5", {"test": "ogh2560_fx2_v1"}, ("VERDICT READY", "  TEST2")),
+                               # 5.7K (2026-11-27): the records are no site design of the helper: OTHER, their bytes printed for the PC
+                               ("k57", {"test": "og57n_fx2_v1"}, ("VERDICT NOT READY", "other record_left ")),
                                ("pal-stock", {"pal": "stock"}, ("VERDICT READY", "STOCK")),
                                ("pal-squeeze", {"pal": "squeeze"}, ("VERDICT READY", "TARGET")),
                                ("pal-real", {"pal": "real"}, ("VERDICT READY", "  TEST2")),

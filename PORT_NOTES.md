@@ -188,6 +188,88 @@ Evidence: `a7iv_map/evidence/fx2/tester_2026-11-27_pal_fifth/` (23 sessions, fx2
 
 **Open:** heat over long recordings (a 30–60 min PAL run is under way); why the SteadyShot margin's view/records mismatch runs while L5 + L16's crashed; HDMI 2160p.
 
+## 5.7K (5760 × 3840) and XAVC S-I (2026-11-27, issue #7; built and emulated, not yet run on an FX2)
+
+The A7 IV's real 5.7K state (its `open_gate_apply_57` default: F906, 300 Mbps F970, M = 1 F981/F986, MP4 headers F989) on the FX2: L13, **K5**
+(PAL **J5**), **K16**, **K19**, S16. XAVC S-I 4K is one more encoder step on top of either state: **I19** (3840 × 2560) or **G19** (5760 × 3840).
+
+**Sensor side, K5 / J5** (`og57n_fx2_v1`, `og57n880_fx2_v1`; the A7 IV's `og57n_v1` / `og57n880_v1` through `build_og_fx2.py`): the squeeze
+designs' 11 cells and stored record (identical to L5's / Q5's), with the two picture records that make the first scaler give 5760 × 3840. NTSC
+and PAL share the records.
+
+**Output side, K16** (`og57cp_fx2_v3`; the A7 IV's `og57cp_v3` through the A7C II's `og57cp_c2_v3`), five words:
+
+| RAM | Stock → new | What |
+|---|---|---|
+| 0x18f62e8 | 0 → 3 | the unit-count setting: four scaler units (the FX2's split rule 0x509e52.., the A7C II's code, table {1, 2, 4}) |
+| 0x24b9c2c | 0x24bbc28 → 0x24bbd00 | id table row of id 0x446 (unopenable): key list → id 0x498's (key 0x5f2, 30,824,400-byte units) |
+| 0x24b9c28 | 0x446 → 0x43f | the same row: id 0x43f, the id the FX2 asks for an output plane above 13,271,040 bytes (it has no row of its own) |
+| 0x18f60fc | 0x2d9 → 0x43f | size table, the 4K entry's buffer id |
+| 0x18f60f8 | 3840 × 2160 → 5760 × 3840 | size table, the 4K entry's output size (written last) |
+
+Guards: the setting's 12 neighbouring bytes (zero in all 24 FX2 dumps we hold, NTSC and PAL), the id row before, id 0x498's row and key list,
+the size entry before. In the FX2's own memory manager (emulated) id 0x43f then opens one 30,824,400-byte unit (5760 × 3840 × 1.25 = 27,648,000),
+and the other 4K movie ids still open.
+
+**The FX2's first-scaler override** (`emu_rcinput_fx2.py`): with K5 + K16 the view's first scaler is 5760 × 3840, equal to the records', output
+5760 × 3840, in mode 0x8c0 and in mode 0x880. With SteadyShot Active the margin would ask for 6472 × 4314: the tests ask for SteadyShot Off.
+
+**Checks:** `emu_fx2_write.py` 118 (K5 / J5 on real NTSC / PAL record pages, refusals across families and designs, K16 on a model with the FX2's
+id rows, the allocator after K16); `emu_rcinput_fx2.py` 14. The read helper is unchanged (fx2read_v5): the 5.7K records read OTHER with their
+bytes printed, and the PC names them (K5 / J5) by SHA-256; the report shows the output size from the size word.
+
+| Library | SHA-256 |
+|---|---|
+| K5 | `fb776e4a` |
+| K6 | `2acafe84` |
+| J5 | `189f919a` |
+| J6 | `61f5e86d` |
+| K16 | `a175e9a5` |
+| K17 | `a50174f7` |
+
+**Encoder side, K19** (`ogfile57r300m1_fx2_v4`; the A7 IV's `ogfile57r300m1_v4` through `build_og57.py --rate300 --m1all --meta --build fx2_101`):
+296 av-cam sites (58 descriptor, 116 profile, 33 rate, 29 level, 29 PredMode, 29 MParam, the unit-type row 3, the clip row) and 14 libmpr sites
+(the four 4K combination rows as 5760 × 3840, the HEVC edit-list start, nine MP4 size sites). Every site's old and new bytes equal the A7 IV
+design's, kind by kind; only the clip code differs (23 on the FX2, as on the A7C II).
+- The HEVC edit-list start: 0x11e40c `csel w0, w1, w0, ls` → `mov w0, #0` (the only match of the A7 IV's four instructions); `m_vpcSt` at 0x2e3898.
+- The MP4 size sites: the A7 IV's nine at −0x37b4, each unique by 32 bytes of context (the 4K kit's two heights among them, unchanged).
+- **M19** (`ogfile57r300m1_fx2_v3`) is the same without the nine MP4 size sites (`--no-meta`); K20 puts back either.
+
+**XAVC S-I 4K, I19 / G19** (`ogfilesi2560_fx2_v1` on top of L19, `ogfilesi57_fx2_v1` on top of K19; the A7 IV's `ogfilesi2560_v1` / `ogfilesi57_v1`):
+the FX2's S-I 4K descriptors (indices 110, 111, 113, 114: 25p and 23.98p, profile keys 105205/105206/105208/105209 with their 205xxx twins),
+16 + 1 and 24 + 1 sites; neither touches a site of the step it goes on top of. Without the S-I step no S-I descriptor answers the open-gate size:
+the "REC stops at once" of issue #7.
+
+**Emulated on the FX2's own code** (`build/run_og57_si_emu_fx2.py`, 34 checks; `emu_elst_site_v3.py --build fx2_101`, 336 cases;
+`emu_mp4_meta.py --build fx2_101 --both`, 432 requests):
+- the encoder request becomes 5760 × 3840; the FX2's descriptor matcher finds each changed descriptor at that size and every other request as before;
+- the memory: the 5.7K picture asks unit-type row 3, whose blocks hold the codec's need (CD 4.98 MB, LD 88.5 MB, multi 12.8 MB); row 2's order would not;
+- the builder's own rules on the FX2's tables: the two-core rule against Sony's profiles, PredMode = MParam in all 691 descriptors, Sony's M = 1
+  two-core profiles, 11 profiles at 97 Mbps or more given the 300 Mbps figures;
+- the edit list: HEVC from one frame to none; AVC, intra and the other path unchanged;
+- the MP4 writer: every request the stock writer accepts answers as the A7 IV's, stock and at both sizes;
+- S-I: unit type 4 holds the intra need (CD 44.3 MB at 4K, 99.5 MB of 100.8 MB at 5.7K), comb 9's headers say the state's size.
+
+**Write libraries** (`emu_fx2_write.py`, 135 checks in all): K19 / K20 / M19 apply, put back and refuse L19's state (and L19 K19's); I19 / G19
+apply on top of L19 / K19 without touching them and come off again.
+
+| Library | SHA-256 |
+|---|---|
+| K19 | `27278ae5` |
+| K20 | `24c7b0be` |
+| M19 | `9d78d348` |
+| I19 | `2aa88118` |
+| I20 | `1065aa61` |
+| G19 | `a17334c4` |
+| G20 | `37f042b8` |
+
+**Targets** (`fx2_apply.py`): `og57` = L13 K5 K16 K19 S16 (PAL: J5), `og2560si` = og2560 + I19, `og57si` = og57 + G19; `putback-57`, `putback-2560si`,
+`putback-57si`; `--no-meta` takes N19 / M19. Launchers `open_gate_5760x3840_test`, `_pal`, `open_gate_3840x2560_si_test`, `open_gate_5760x3840_si_test`
+and their putbacks; app 0.7.
+
+**Not known:** anything of it on an FX2; the request word +0x88 a real recording sends (the emulation uses 3, the 4K path that records); 5.7K
+with SteadyShot Active; in-camera playback of 5.7K (never on the A7 IV); 3840 × 2560 S-I (not run on the A7 IV either; 5.7K S-I was, F1014).
+
 ## What the FX2 is
 
 - **The sensor is the A7 IV's.**

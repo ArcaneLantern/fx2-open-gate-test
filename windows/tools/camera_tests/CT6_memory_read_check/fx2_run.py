@@ -82,6 +82,14 @@ WRITE_STEPS = {
     "Q5": ("libJit_fx2_Q5.so", "04c9fd0fbec1206cb14f11828cffd82e791aa21713b52c4fc332d021cce8f783", "apply the sensor-side design ogsq880_fx2_v1 for PAL (mode 0x880, 25p: sensor cells, two records, the stored record; L5 moved to 0x880)"),
     "Q6": ("libJit_fx2_Q6.so", "7a8ae5846d90d92599df0fcd32ce1cac9bbb2c8cbf6ea9ef79916560600e13e0", "put back the sensor-side design ogsq880_fx2_v1 (PAL)"),
     "P5": ("libJit_fx2_P5.so", "b3b6094d843d59c514e67915019025dba7f23830051648334ee2a81e5f4653d9", "apply the sensor-side design ogh2560880_fx2_v1 for PAL (mode 0x880, 25p: H5 moved to 0x880, records whose first scaler gives 4336x2560)"),
+    # K5/K6, J5/J6, K16/K17 (2026-11-27, GitHub issue 7: 5.7K, the A7 IV's real 5760x3840 state F906): the sensor side with records whose
+    # first scaler gives 5760x3840 (K = mode 0x8c0, NTSC; J = mode 0x880, PAL), and the output side (four scaler units, the 0x43f buffer, 5760x3840)
+    "K5": ("libJit_fx2_K5.so", "fb776e4a4550def3066cd1680ecc981524ffcf8a656a60dd81d100a83393883d", "apply the sensor-side design og57n_fx2_v1 for 5.7K (mode 0x8c0, NTSC: L5's sensor cells and stored record, records whose first scaler gives 5760x3840: the A7 IV's og57n_v1)"),
+    "K6": ("libJit_fx2_K6.so", "2acafe84e8a094451e800887d2e07894014cee1f98e01ee39774f86982d1fe8f", "put back the sensor-side design og57n_fx2_v1"),
+    "J5": ("libJit_fx2_J5.so", "189f919aabbda9ebfa0fab2c659d9f43f080ec91851f9c3662722cfdef28c805", "apply the sensor-side design og57n880_fx2_v1 for 5.7K on PAL (mode 0x880, 25p: Q5's cells and stored record, the 5760x3840 records)"),
+    "J6": ("libJit_fx2_J6.so", "61f5e86de8ae2ec08390dd7a005ae3cd7e0fc791e472a2fb2a5f89cd3449a23f", "put back the sensor-side design og57n880_fx2_v1 (PAL)"),
+    "K16": ("libJit_fx2_K16.so", "a175e9a5cf8cc3aff600051316f67146ee1eb829898d94cebef390bfbbaf4252", "apply the output side og57cp_fx2_v3 for 5.7K (four scaler units, a 30.8 MB output buffer as id 0x43f, the output size 5760x3840: five words)"),
+    "K17": ("libJit_fx2_K17.so", "a50174f7d2ee8535e4d7a1ee08106055a46d0d54c7f8ce2b6630f8d6ac8659b3", "put back the output side og57cp_fx2_v3"),
     "P6": ("libJit_fx2_P6.so", "5b892e4c904507cf3e610852b06239d77c077164ae4386ffae480cd6b806271f", "put back the sensor-side design ogh2560880_fx2_v1 (PAL)"),
     "L16": ("libJit_fx2_L16.so", "744dd7eb1b8f0cd79fde6f508b39988e9c92bc37ef1f10f30783ce2ae2ee441a", "apply the output size outsz2560_fx2_v1 (one word)"),
     "L17": ("libJit_fx2_L17.so", "d2d62a12fc2f99f69423fa42d96e9650be6c8aba30982b11d281a5925d2e5098", "put back the output size outsz2560_fx2_v1"),
@@ -93,6 +101,14 @@ WRITE_STEPS = {
     # 3840x2560 (the A7 IV's working ogfile2560_hs_s_v2). L20 puts back either version. N19 = the same without the heights (apply --no-meta).
     "L19": ("libJit_fx2_L19.so", "e2a695989c05bdb4261892f46414d5b9d9bf42e87f30c6103035834beefb3525", "apply the encoder-side design ogfile2560_hs_s_fx2_v2 (101 + 4 sites, and the MP4 headers say 3840x2560: 2 more)"),
     "L20": ("libJit_fx2_L20.so", "decff5bf679512a5004c133d37b6131c93424e4a52c29e570baf884c119eb4eb", "put back the encoder-side design ogfile2560_hs_s_fx2_v2 (or v1)"),
+    # 2026-11-27 (GitHub issue 7): the 5.7K encoder side and XAVC S-I 4K
+    "K19": ("libJit_fx2_K19.so", "27278ae59a0264df5d410eb2b6b25efffdc984251b042efc366787b01adbac40", "apply the encoder-side design ogfile57r300m1_fx2_v4 for 5.7K (296 + 14 sites: two encoder cores, 300 Mbps on the 100M+ settings, I and P pictures only, the MP4 headers at 5760x3840: the A7 IV's ogfile57r300m1_v4)"),
+    "K20": ("libJit_fx2_K20.so", "24c7b0be46f16e7ad93cefce5bb529ff875ea17bb45de56e697a24f21349ea12", "put back the 5.7K encoder-side design ogfile57r300m1_fx2_v4 (or v3)"),
+    "M19": ("libJit_fx2_M19.so", "9d78d348f7046a3dd5c5a79d2fc66b58884e603adf20428694a9702334a105da", "apply the encoder-side design ogfile57r300m1_fx2_v3 for 5.7K (as K19, but the MP4 headers keep 3840x2160: --no-meta)"),
+    "I19": ("libJit_fx2_I19.so", "2aa88118db758eebc1fb83ec57c60ffb5bd1eea24cd23ea7412d0b2d3157bc66", "apply the encoder-side design ogfilesi2560_fx2_v1: XAVC S-I 4K at 3840x2560 (16 + 1 sites, on top of L19: the A7 IV's ogfilesi2560_v1)"),
+    "I20": ("libJit_fx2_I20.so", "1065aa61ecc6db6bf409f8725a72dfbb0ef7d91430d1ee8eb861d1e230c90f9e", "put back the XAVC S-I 4K step ogfilesi2560_fx2_v1"),
+    "G19": ("libJit_fx2_G19.so", "a17334c4c18519846b08f0ed27437eec93d4eb510b205022df052fdb20f487aa", "apply the encoder-side design ogfilesi57_fx2_v1: XAVC S-I 4K at 5760x3840 (24 + 1 sites, on top of K19: the A7 IV's ogfilesi57_v1)"),
+    "G20": ("libJit_fx2_G20.so", "37f042b8302703a4d133748b71b0f0224fe9d6df53e02219a9c5045367be6899", "put back the XAVC S-I 4K step ogfilesi57_fx2_v1"),
     "N19": ("libJit_fx2_N19.so", "45a68ca583f6f60f05893f6652a1b7d9556870081c4ec127ed0051527f3e8aec", "apply the encoder-side design ogfile2560_hs_s_fx2_v1 (101 + 4 sites; the MP4 headers keep 3840x2160)"),
     # The rear-screen step (optional, on top of the open-gate state): the same level 16/17 code with the screen words. There is no C step: the
     # FX2's own De-Squeeze Display is kept (its ratios are part of S16).
@@ -100,7 +116,8 @@ WRITE_STEPS = {
     "S17": ("libJit_fx2_S17.so", "34075aa0bf39d67ca5623bc0913599fd3c2ada3916bb2ba99d63bc214339b0d8", "put back the screen words lcd32dsq_fx2_v1"),
 }
 PINS.update({k: v[:2] for k, v in WRITE_STEPS.items()})
-LEVELS.update({k: {"L": 200, "S": 300, "N": 500, "B": 700, "H": 800, "F": 900, "Q": 1000, "P": 1100}[k[0]] + int(k[1:]) for k in WRITE_STEPS})
+LEVELS.update({k: {"L": 200, "S": 300, "N": 500, "B": 700, "H": 800, "F": 900, "Q": 1000, "P": 1100, "K": 1200, "J": 1300, "I": 1400, "G": 1500, "M": 1600}[k[0]] + int(k[1:])
+               for k in WRITE_STEPS})
 WHICH = "check"
 FULL_HEIGHT_COLUMN = 5          # the register-matrix column of the full-height read-out (ogsq_fx2_v1's S0: mode 0x8c0 column 6 -> 5, as on the A7 IV)
 
@@ -161,9 +178,12 @@ def check_result(data):
     s3 = {"header": head, "verdict": verdict, "ready": verdict.startswith("VERDICT READY"),
           "identity_same": count(r"SAME as the 1\.01 update$"), "identity_differs": count(r"DIFFERS from the 1\.01 update$"),
           "coprocessor_sites": sites, "libmpr_sites": [ln for ln in lines if ln.startswith("lm ")],
+          # 2026-11-27: the bytes of each main-processor site, so that a state other than the 4K design's (5.7K: K19 / M19) can be named
+          "avcam_bytes": {m.group(1): m.group(2) for m in (re.match(r"av (0x[0-9a-f]+) bytes ([0-9a-f]+)  ", ln) for ln in lines) if m},
+          "libmpr_bytes": {m.group(1): m.group(2) for m in (re.match(r"lm (0x[0-9a-f]+) at 0x[0-9a-f]+ bytes ([0-9a-f]+)  ", ln) for ln in lines) if m},
           "avcam_stock": count(r"^av .*  STOCK$"), "avcam_target": count(r"^av .*  TARGET$"), "avcam_other": count(r"^av .*  OTHER$"),
           "avcam_guards": [ln for ln in lines if ln.startswith("guard ")], "problem_lines": [ln for ln in lines if ln.startswith("!!")],
-          "pages": len(pages), "other_bytes": {k: v for k, v in other_bytes.items() if "stored_record" in k}}
+          "pages": len(pages), "other_bytes": {k: v for k, v in other_bytes.items() if "stored_record" in k or k.startswith("record_")}}
     cmd = re.search(r"== file /proc/cmdline\n(.*?)\n== end", text, re.S)
     ver = re.search(r"== file /proc/version\n(.*?)\n== end", text, re.S)
     s3["kernel_command_line"], s3["kernel_version"] = (cmd.group(1).strip() if cmd else None), (ver.group(1).strip() if ver else None)
@@ -171,7 +191,7 @@ def check_result(data):
         s3["decoded"] = decode_pages(pages)
         # v4: the first-scaler size the saved resize view holds, against the one the picture records in place give
         rv, rd = s3["decoded"].get("resize_view"), reference().get("record_designs", {})
-        states = {x["state"] for x in sites if x["name"] in ("record_left", "record_right")}
+        states = set(record_states(s3).values())
         if rv and len(states) == 1 and next(iter(states)) in rd:
             info = rd[next(iter(states))]
             rv.update(records_in_place=info["design"], first_scaler_by_records=info["first_scaler"], sizes_agree=rv["first_scaler"] == info["first_scaler"])
@@ -516,6 +536,13 @@ def selftest(lib):
             check(camera_state(g)["sensor_side"].startswith("Q5") and camera_state(g)["family"].startswith("PAL") and not camera_state(g)["warning"],
                   "a PAL camera with Q5 and L19 (model): read as Q5 on PAL, no warning")
             import emu_fx2
+            r_, text_ = emu_fx2.run(bytes(lib), applied=True, enc="ogfile57r300m1_fx2_v4")
+            cs_ = camera_state(check_result(text_.encode())["s3"])
+            check(not r_.bad and cs_["encoder_side"].startswith("applied (K19"), "the emulated check with the 5.7K encoder step: read as K19 (%s)" % cs_["encoder_side"])
+            r_, text_ = emu_fx2.run(bytes(lib), test="og57n_fx2_v1")
+            cs_ = camera_state(check_result(text_.encode())["s3"])
+            check(not r_.bad and cs_["sensor_side"].startswith("K5 ") and cs_["family"].startswith("NTSC"),
+                  "the emulated check with the 5.7K sensor step (og57n_fx2_v1): read as K5 on NTSC (%s)" % cs_["sensor_side"])
             for pal, want in (("stock", "none (stock)"), ("squeeze", "Q5 "), ("real", "P5 ")):
                 r_, text_ = emu_fx2.run(bytes(lib), pal=pal)
                 cs_ = camera_state(check_result(text_.encode())["s3"])
@@ -548,6 +575,34 @@ def margin_name(rv):
     return "margin word about %d of 65536" % m
 
 
+def record_states(f):
+    """The two picture records' states: the site's own (STOCK / TARGET / TEST / TEST2), or K57 when the bytes the helper printed for an OTHER
+    record are the 5.7K records (og57n_fx2_v1 / og57n880_fx2_v1: no site design of the helper, recognised by SHA-256 on the PC)."""
+    import hashlib
+    k57 = reference().get("record_designs", {}).get("K57", {}).get("sha256", [])
+    out = {}
+    for x in f["coprocessor_sites"]:
+        if x["name"] in ("record_left", "record_right"):
+            s = x["state"]
+            hx = f.get("other_bytes", {}).get(x["name"])
+            if s.startswith("OTHER") and hx and k57 and hashlib.sha256(bytes.fromhex(hx)).hexdigest() == k57[0 if x["name"] == "record_left" else 1]:
+                s = "K57"
+            out[x["name"]] = s
+    return out
+
+
+def output_size(f):
+    """The movie size table's 4K output word as the check shows it: stock 3840x2160, L16's 3840x2560 or K16's 5760x3840."""
+    x = next((x for x in f["coprocessor_sites"] if x["name"] == "outsize"), None)
+    if not x:
+        return None
+    if x["state"] == "STOCK":
+        return "3840x2160 (stock)"
+    if x["state"] == "TARGET":
+        return "3840x2560 (L16)"
+    return {"8016000f": "5760x3840 (K16, 5.7K)"}.get(x.get("shown") or "", "other (%s)" % x.get("shown"))
+
+
 def camera_state(f):
     """v5: which sensor-side design the coprocessor sites show, whether the camera is set to NTSC or PAL, the encoder side's state, and a
     warning for the state the power switch leaves on an FX2 (GitHub issue 5: it restarts the coprocessor, so every coprocessor site is
@@ -555,7 +610,7 @@ def camera_state(f):
     st = {x["name"]: x["state"] for x in f["coprocessor_sites"]}
     cells = {st[k] for k in st if re.match(r"S\d+$", k)}
     pal = {st[k] for k in st if re.match(r"pal_S\d+$", k)}
-    recs = {st.get("record_left"), st.get("record_right")}
+    recs = set(record_states(f).values()) or {None}
     d = f.get("decoded") or {}
     ref = reference()
 
@@ -589,20 +644,27 @@ def camera_state(f):
               ("TARGET", "STOCK", "TEST2"): "H5 ogh2560_fx2_v1 (NTSC real rows)",
               ("TEST", "STOCK", "TEST"): "B5 fhband_fx2_v1 (band test)",
               ("STOCK", "TARGET", "TARGET"): "Q5 ogsq880_fx2_v1 (PAL squeeze)",
-              ("STOCK", "TARGET", "TEST2"): "P5 ogh2560880_fx2_v1 (PAL real rows)"}.get((c_, p_, r_))
+              ("STOCK", "TARGET", "TEST2"): "P5 ogh2560880_fx2_v1 (PAL real rows)",
+              ("TARGET", "STOCK", "K57"): "K5 og57n_fx2_v1 (NTSC 5.7K)",
+              ("STOCK", "TARGET", "K57"): "J5 og57n880_fx2_v1 (PAL 5.7K)"}.get((c_, p_, r_))
     if sensor and from_dump and p_ == "TARGET":
         sensor += " (from mode 0x880's stored record and the picture records: a dump does not read mode 0x880's cells)"
-    if sensor is None and not pal and c_ == "STOCK" and r_ in ("TARGET", "TEST2"):
+    if sensor is None and not pal and c_ == "STOCK" and r_ in ("TARGET", "TEST2", "K57"):
         sensor = "the records of a PAL step (Q5/P5) with mode 0x8c0's cells stock: a PAL design, if this is a dump (the dump does not read mode 0x880's cells)"
     if sensor is None:
         sensor = "MIXED (cells %s, PAL cells %s, records %s)" % (sorted(x for x in cells if x), sorted(x for x in pal if x) or "-", sorted(x for x in recs if x))
-    encoder = ("applied (L19)" if f["avcam_target"] and not f["avcam_stock"] and not f["avcam_other"] else
+    enc57 = None                                  # 2026-11-27: the 5.7K encoder side, named from the printed bytes
+    for word, stt in ref.get("encoder_states", {}).items():
+        if f.get("avcam_bytes") and f.get("avcam_bytes") == stt["av"] and f.get("libmpr_bytes") == stt["lm"]:
+            enc57 = word
+    encoder = ("applied (%s, 5.7K: %s)" % (enc57, ref["encoder_states"][enc57]["design"]) if enc57 else
+               "applied (L19)" if f["avcam_target"] and not f["avcam_stock"] and not f["avcam_other"] else
                "stock" if f["avcam_stock"] and not f["avcam_target"] and not f["avcam_other"] else
                "not read" if not (f["avcam_stock"] or f["avcam_target"] or f["avcam_other"]) else
                "MIXED (%d stock, %d applied, %d other)" % (f["avcam_stock"], f["avcam_target"], f["avcam_other"]))
     raw = {st[k] for k in st if k.startswith("rawbuf_")}
     warn = None
-    if f["avcam_target"] and sensor.startswith("none") and raw == {"STOCK"}:
+    if (f["avcam_target"] or enc57) and sensor.startswith("none") and raw == {"STOCK"}:
         warn = ("WARNING: the encoder side (L19) is still applied but every coprocessor site is stock. This is what the FX2's power switch "
                 "leaves: it restarts the image processor, not the main processor. Do not record in this state. Take the battery out for 10 "
                 "seconds (everything stock), or run the putback, then apply again.")
@@ -626,7 +688,8 @@ def report(session, facts, which):
     lines.append("  av-cam.bin sites: %d stock, %d target, %d other" % (f["avcam_stock"], f["avcam_target"], f["avcam_other"]))
     lines += ["problem lines:"] + ["  " + ln for ln in f["problem_lines"]] if f["problem_lines"] else ["no problem lines"]
     cs = camera_state(f)                          # v5
-    lines[3:3] = ["camera set to: %s" % cs["family"], "sensor side in place: %s" % cs["sensor_side"], "encoder side: %s" % cs["encoder_side"]] + \
+    lines[3:3] = ["camera set to: %s" % cs["family"], "sensor side in place: %s" % cs["sensor_side"], "output size (4K class): %s" % output_size(f),
+                  "encoder side: %s" % cs["encoder_side"]] + \
                  ([cs["warning"]] if cs["warning"] else [])
     d = f.get("decoded")
     if d:

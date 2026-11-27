@@ -97,6 +97,24 @@ def first_scaler_size(left, right):
     return [u(right, 0x190) + u(right, 0x1A4) - u(left, 0x1A0), u(right, 0x1A6)]
 
 
+def encoder_states(av, lm, fl):
+    """{state: {"av": {offset: hex}, "lm": {offset: hex}}} at the 4K design's sites, for the 5.7K encoder designs applied on a stock camera."""
+    out = {}
+    for name, word in (("ogfile57r300m1_fx2_v4", "K19"), ("ogfile57r300m1_fx2_v3", "M19")):
+        d = design(name)
+        bufs = {"av-cam.bin": bytearray(av), "libmpr.so": bytearray(lm)}
+        for q in d["patches"]:
+            o, new = int(q["file_off"], 16), bytes.fromhex(q["new"])
+            bufs[q["binary"]][o:o + len(new)] = new
+        st = {"av": {}, "lm": {}, "design": name}
+        for q in fl["patches"]:
+            o, n = int(q["file_off"], 16), len(q["old"]) // 2
+            st["av" if q["binary"] == "av-cam.bin" else "lm"][hex(o)] = bytes(bufs[q["binary"]][o:o + n]).hex()
+        out[word] = st
+    assert out["K19"]["av"] == out["M19"]["av"] and out["K19"]["lm"] != out["M19"]["lm"]
+    return out
+
+
 def c_bytes(b):
     return "{" + ",".join(str(x) for x in b) + "}"
 
@@ -257,6 +275,13 @@ def main():
                    "TARGET": {"design": og["design"], "first_scaler": first_scaler_size(*rpair(og, "new"))}}
     for word, tn in zip(("TEST", "TEST2"), TEST_DESIGNS):
         rec_designs[word] = {"design": tn, "first_scaler": first_scaler_size(*rpair(design(tn), "new"))}
+    # 2026-11-27 (5.7K, GitHub issue 7): the 5.7K records are no site design of this helper, so a check reports them OTHER and prints their
+    # bytes ("other record_left <hex>"); the PC recognises them by these SHA-256 values (reference data only: the libraries do not change)
+    k57 = design("og57n_fx2_v1")
+    assert rpair(k57, "new") == rpair(design("og57n880_fx2_v1"), "new") and rpair(k57, "old") == rpair(og, "old")
+    rec_designs["K57"] = {"design": "og57n_fx2_v1 / og57n880_fx2_v1 (K5 / J5)", "first_scaler": first_scaler_size(*rpair(k57, "new")),
+                          "sha256": [hashlib.sha256(x).hexdigest() for x in rpair(k57, "new")]}
+    assert rec_designs["K57"]["first_scaler"] == [5760, 3840]
     ref = {"about": "FX2 1.01 reference data for reading an fx2read dump; from cpapp-b.bin and build/emu_drvparam.py fx2_101", "matrix_address": hex(MATRIX),
            "matrix_row_bytes": 24, "matrix": matrix, "column_map": list(struct.unpack_from("<%dI" % NMODES, cp, COLMAP - BASE)),
            "mode_ids": [hex(x) for x in struct.unpack_from("<%dI" % NMODES, cp, IDS - BASE)], "records_address": hex(RECS), "record_size": REC,
@@ -275,6 +300,9 @@ def main():
            # v4: what the two picture records in place say (the state word the helper prints for site record_left / record_right) and the
            # first-scaler picture those records give (0x7cccc2's reading: right +0x190 + right +0x1a4 - left +0x1a0, right +0x1a6)
            "record_designs": rec_designs,
+           # 2026-11-27 (5.7K, GitHub issue 7): what the 5.7K encoder steps leave at the main-processor sites this helper reads (the 4K design's
+           # 101 av-cam sites and 6 libmpr sites); the check prints each one's bytes, so the PC can name K19 (or M19, without the MP4 size)
+           "encoder_states": encoder_states(av, lm, fl),
            "resize_view": {"address": hex(RESIZE_VIEW), "bytes": 0x54, "flags": 7, "first_stage_at": 0x14, "crop_at": 0x38, "first_scaler_at": 0x3C,
                            "output_at": 0x40, "mode_at": 0x44,
                            "note": "the saved copy of the view the resize set-up 0x51fbc0 fills. Byte +5 set: the FX2 stores max(the records' "

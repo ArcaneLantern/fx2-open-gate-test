@@ -48,7 +48,17 @@ for L in 5 6; do
   "${CC[@]}" -DLEVEL=$L '-DSITES_H="expected_sites_ogsq880_fx2_v1.h"' '-DDESIGN_LABEL="ogsq880_fx2_v1"' -DIMAGER=0x1750860UL -DCTRL_DRVPARAM=0x6acU -DREC=0x170U     readcheck.c "$SEN" -o "$H/libJit_fx2_Q$L.so"
   "${CC[@]}" -DLEVEL=$L '-DSITES_H="expected_sites_ogh2560880_fx2_v1.h"' '-DDESIGN_LABEL="ogh2560880_fx2_v1"' -DIMAGER=0x1750860UL -DCTRL_DRVPARAM=0x6acU -DREC=0x170U     readcheck.c "$SEN" -o "$H/libJit_fx2_P$L.so"
 done
+# K5/K6 and J5/J6 (2026-11-27, GitHub issue 7: 5.7K): the same levels 5/6 with og57n_fx2_v1 (mode 0x8c0, NTSC) and og57n880_fx2_v1 (mode
+# 0x880, PAL): the A7 IV's og57n_v1 / og57n880_v1, the squeeze designs' cells and stored records with records whose first scaler gives 5760x3840
+for L in 5 6; do
+  "${CC[@]}" -DLEVEL=$L '-DSITES_H="expected_sites_og57n_fx2_v1.h"' '-DDESIGN_LABEL="og57n_fx2_v1"' -DIMAGER=0x1750860UL -DCTRL_DRVPARAM=0x6acU -DREC=0x170U \
+    readcheck.c "$SEN" -o "$H/libJit_fx2_K$L.so"
+  "${CC[@]}" -DLEVEL=$L '-DSITES_H="expected_sites_og57n880_fx2_v1.h"' '-DDESIGN_LABEL="og57n880_fx2_v1"' -DIMAGER=0x1750860UL -DCTRL_DRVPARAM=0x6acU -DREC=0x170U \
+    readcheck.c "$SEN" -o "$H/libJit_fx2_J$L.so"
+done
 for L in 16 17; do
+  # K16/K17 (5.7K): og57cp_fx2_v3, the A7 IV's og57cp_v3 (four scaler units, the 0x43f output buffer, the output size 5760x3840), in L16's place
+  "${CC[@]}" -DLEVEL=$L '-DWORDS_H="expected_words_og57cp_fx2_v3.h"' readcheck.c "$SEN" -o "$H/libJit_fx2_K$L.so"
   "${CC[@]}" -DLEVEL=$L '-DWORDS_H="expected_words_outsz2560_fx2_v1.h"' readcheck.c "$SEN" -o "$H/libJit_fx2_L$L.so"
   "${CC[@]}" -DLEVEL=$L '-DWORDS_H="expected_words_lcd32dsq_fx2_v1.h"' readcheck.c "$SEN" -o "$H/libJit_fx2_S$L.so"
   # F16/F17 (fourth kit, the fallback): fehold_fx2_v1, one code word of the resize set-up
@@ -58,5 +68,14 @@ for L in 19 20; do
   "${CC[@]}" -DLEVEL=$L '-DMP_H="expected_mp_ogfile2560_hs_s_fx2_v2.h"' -DAVCAM_PHYS=0x401000000UL readcheck.c -o "$H/libJit_fx2_L$L.so"
 done
 "${CC[@]}" -DLEVEL=19 '-DMP_H="expected_mp_ogfile2560_hs_s_fx2_v1.h"' -DAVCAM_PHYS=0x401000000UL readcheck.c -o "$H/libJit_fx2_N19.so"
+# 2026-11-27 (GitHub issue 7): K19/K20 = ogfile57r300m1_fx2_v4 (5.7K encoder side: two cores, 300 Mbps on the 100M+ settings, I and P pictures
+# only, the HEVC edit list at 0, the MP4 headers at 5760x3840); M19 = ogfile57r300m1_fx2_v3 (the same without the MP4 size: --no-meta; put back
+# by K20); I19/I20 = ogfilesi2560_fx2_v1 (XAVC S-I 4K at 3840x2560, on top of L19); G19/G20 = ogfilesi57_fx2_v1 (S-I at 5760x3840, on top of K19)
+for L in 19 20; do
+  "${CC[@]}" -DLEVEL=$L '-DMP_H="expected_mp_ogfile57r300m1_fx2_v4.h"' -DAVCAM_PHYS=0x401000000UL readcheck.c -o "$H/libJit_fx2_K$L.so"
+  "${CC[@]}" -DLEVEL=$L '-DMP_H="expected_mp_ogfilesi2560_fx2_v1.h"' -DAVCAM_PHYS=0x401000000UL readcheck.c -o "$H/libJit_fx2_I$L.so"
+  "${CC[@]}" -DLEVEL=$L '-DMP_H="expected_mp_ogfilesi57_fx2_v1.h"' -DAVCAM_PHYS=0x401000000UL readcheck.c -o "$H/libJit_fx2_G$L.so"
+done
+"${CC[@]}" -DLEVEL=19 '-DMP_H="expected_mp_ogfile57r300m1_fx2_v3.h"' -DAVCAM_PHYS=0x401000000UL readcheck.c -o "$H/libJit_fx2_M19.so"
 cd "$H"
-for N in L13 L14 L5 L6 B5 B6 H5 H6 Q5 Q6 P5 P6 L16 L17 F16 F17 L19 L20 N19 S16 S17; do echo "$(sha256sum libJit_fx2_$N.so | cut -d' ' -f1) $(stat -c %s libJit_fx2_$N.so) $N"; done
+for N in L13 L14 L5 L6 B5 B6 H5 H6 Q5 Q6 P5 P6 K5 K6 J5 J6 K16 K17 L16 L17 F16 F17 L19 L20 N19 K19 K20 M19 I19 I20 G19 G20 S16 S17; do echo "$(sha256sum libJit_fx2_$N.so | cut -d' ' -f1) $(stat -c %s libJit_fx2_$N.so) $N"; done

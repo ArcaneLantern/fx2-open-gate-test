@@ -7,6 +7,8 @@
   python fx2_apply.py squeeze  [--dry-run]             (the squeezed open gate: ran on an FX2, 2026-11-26)
   python fx2_apply.py test5 | test6 | og2560 | test7  [--dry-run]      (fourth kit, 2026-11-26: the path to a true 3840x2560 file)
   python fx2_apply.py putback-2560 | putback-hold  [--dry-run]         (put back og2560 / test7 without a cold boot)
+  python fx2_apply.py og57 | putback-57  [--dry-run]                    (2026-11-27: the 5760x3840 state, 300 Mbps; GitHub issue 7)
+  python fx2_apply.py og2560si | og57si | putback-2560si | putback-57si (the same with XAVC S-I 4K as well)
   add --pal or --ntsc to any of these but screen / screen-putback / test1 (fifth kit, 2026-11-27): which sensor-side steps to use. Without
   either, the newest saved check says it (fx2read_v5 reads it from the camera's records), or the script asks.
 
@@ -97,16 +99,29 @@ STEPS = {"apply": ("L13", "L5", "L16", "L19"), "putback": ("L20", "L17", "L6", "
          # fourth kit (2026-11-26): the path to a true 3840x2560 file (H5 = ogh2560_fx2_v1 in L5's place), and the fallback (F16)
          "test5": ("L13", "H5"), "test6": ("L13", "H5", "L16"), "og2560": ("L13", "H5", "L16", "L19", "S16"),
          "test7": ("L13", "L5", "F16", "L16", "L19"),
-         "putback-2560": ("S17", "L20", "L17", "H6", "L14"), "putback-hold": ("L20", "L17", "F17", "L6", "L14")}
-TESTS = ("test1", "test2", "test3", "test4", "squeeze", "test5", "test6", "og2560", "test7")
+         "putback-2560": ("S17", "L20", "L17", "H6", "L14"), "putback-hold": ("L20", "L17", "F17", "L6", "L14"),
+         # 2026-11-27 (GitHub issue 7): the A7 IV's real 5760x3840 state (F906; 300 Mbps on the 100M+ settings, I and P pictures only, the MP4
+         # headers at 5760x3840: its open_gate_apply_57 default) on the FX2: K5 (records for a 5760x3840 first scaler), K16 (four scaler units,
+         # the 0x43f output buffer, the output size), K19 (the encoder side). The screen step is the 4K one (the picture is 3:2 either way)
+         "og57": ("L13", "K5", "K16", "K19", "S16"), "putback-57": ("S17", "K20", "K17", "K6", "L14"),
+         # XAVC S-I 4K as well (the A7 IV's ogfilesi2560_v1 / ogfilesi57_v1, one more encoder step on top of the HS/S one; 5.7K S-I works on an
+         # A7 IV at 24p, F1014): issue 7 found S-I stopping REC at once with the 4K patch, because no S-I step was in it
+         "og2560si": ("L13", "H5", "L16", "L19", "I19", "S16"), "og57si": ("L13", "K5", "K16", "K19", "G19", "S16"),
+         "putback-2560si": ("S17", "I20", "L20", "L17", "H6", "L14"), "putback-57si": ("S17", "G20", "K20", "K17", "K6", "L14")}
+TESTS = ("test1", "test2", "test3", "test4", "squeeze", "test5", "test6", "og2560", "test7", "og57", "og2560si", "og57si")
 FOURTH = {"test5": "the taller first-scaler picture (4336x2560) with the stock output size. Expected: what test 2 gives, a steady picture and squeezed 3840x2160 clips.",
           "test6": "test 5 plus the output size 3840x2560. A diagnostic step only: look at the screen, do NOT record (the encoder is still set for 2,160 rows).",
           "og2560": "the path to a true 3840x2560 file: raw write buffer, the sensor side with a 4336x2560 first scaler, output size, encoder side, rear screen. "
                     "Expected: clips of 3840x2560.",
           "test7": "the fallback: the squeeze design with one code word that keeps the first-scaler size, then output size and encoder side. Expected: clips of 3840x2560 "
-                   "(2,438 rows enlarged, as on the A7 IV). Run it only if test 5 does not give a picture."}
+                   "(2,438 rows enlarged, as on the A7 IV). Run it only if test 5 does not give a picture.",
+          "og57": "5.7K: raw write buffer, the sensor side with a 5760x3840 first scaler, four scaler units with a 30.8 MB output buffer and the output size "
+                  "5760x3840, the encoder side (300 Mbps on the 100M+ settings, I and P pictures only, MP4 headers 5760x3840), rear screen. Expected: "
+                  "clips of 5760x3840 with real detail, as on the A7 IV (F906).",
+          "og2560si": "og2560 plus XAVC S-I 4K (AVC intra 4:2:2 10-bit) at 3840x2560: one more encoder step on top of the HS/S one.",
+          "og57si": "og57 plus XAVC S-I 4K at 5760x3840: one more encoder step on top of the 5.7K one."}
 # fifth kit (2026-11-27): the PAL sensor-side steps (mode 0x880) that take the NTSC ones' place with --pal; test1's band design has none
-PAL_STEPS = {"L5": "Q5", "L6": "Q6", "H5": "P5", "H6": "P6"}
+PAL_STEPS = {"L5": "Q5", "L6": "Q6", "H5": "P5", "H6": "P6", "K5": "J5", "K6": "J6"}     # (5.7K: K -> J)
 NO_PAL = ("test1",)
 RUNNER = HERE / "fx2_run.py"
 LISTER = HERE.parent / "CT1_usb_first_contact" / "ct1_stage2_service.py"
@@ -120,7 +135,14 @@ MOVIE = MOVIE_BY["NTSC"]
 STATUS = {"test5": "Ran on an FX2: a steady picture (GitHub issue 5).",
           "test6": "Ran on an FX2: a steady picture, but a recording froze the camera (GitHub issue 5).",
           "og2560": "WORKS on FX2s set to NTSC (23.98p) and to PAL (25p): 3840x2560 files (GitHub issue 5).",
-          "test7": "Not run on an FX2 (not needed: og2560 works)."}
+          "test7": "Not run on an FX2 (not needed: og2560 works).",
+          "og57": "NOT YET RUN ON AN FX2: the A7 IV's 5.7K steps (they record 5760x3840 there), checked against the FX2's own code in emulation.",
+          "og2560si": "og2560 works on FX2s; its S-I step is NOT YET RUN on an FX2 (on the A7 IV only the 5.7K S-I step ran: it works, F1014).",
+          "og57si": "NOT YET RUN ON AN FX2 (5.7K S-I works on an A7 IV at 24p, F1014)."}
+# what the 5.7K and S-I targets record, by family (on a PAL FX2, XAVC HS 4K is 50p only)
+TARGET_FORMATS = {"og57": {"NTSC": "XAVC HS 4K or XAVC S 4K", "PAL": "XAVC S 4K"},
+                  "og2560si": {"NTSC": "XAVC HS 4K, XAVC S 4K or XAVC S-I 4K", "PAL": "XAVC S 4K or XAVC S-I 4K"},
+                  "og57si": {"NTSC": "XAVC HS 4K, XAVC S 4K or XAVC S-I 4K", "PAL": "XAVC S 4K or XAVC S-I 4K"}}
 
 
 def last_family():
@@ -307,7 +329,7 @@ def main():
     ap.add_argument("--dry-run", action="store_true", help="show the steps and what each would send; nothing is sent")
     ap.add_argument("--no-screen", action="store_true", help="with apply or putback: only the four open-gate steps, without the screen step")
     ap.add_argument("--no-movie-session", action="store_true", help="with apply or screen: leave out the closing read-only session in movie mode")
-    ap.add_argument("--no-meta", action="store_true", help="with apply: the encoder step without the MP4 header heights (N19); the headers keep saying 3840x2160")
+    ap.add_argument("--no-meta", action="store_true", help="with apply, og2560, og57 and the S-I forms: the encoder step without the MP4 header size (N19 / M19); the headers keep saying 3840x2160")
     ap.add_argument("--ntsc", action="store_true", help="the camera is set to NTSC (23.98p): the sensor-side steps L5 / H5")
     ap.add_argument("--pal", action="store_true", help="the camera is set to PAL (25p): the sensor-side steps Q5 / P5 (mode 0x880)")
     a = ap.parse_args()
@@ -328,10 +350,10 @@ def main():
     MOVIE = MOVIE_BY[family]
     if a.no_screen and a.what not in ("apply", "putback"):
         raise SystemExit("--no-screen goes with apply or putback. Nothing was sent.")
-    if a.no_meta and a.what != "apply":
-        raise SystemExit("--no-meta goes with apply (the put back L20 puts back either encoder step). Nothing was sent.")
-    if a.no_meta:
-        steps = tuple("N19" if k == "L19" else k for k in steps)
+    if a.no_meta and a.what not in ("apply", "og2560", "og57", "og2560si", "og57si"):
+        raise SystemExit("--no-meta goes with apply, og2560, og57 and their S-I forms (L20 / K20 put back either encoder step). Nothing was sent.")
+    if a.no_meta:                                    # the encoder step without the MP4 header size: N19 for 4K, M19 for 5.7K
+        steps = tuple({"L19": "N19", "K19": "M19"}.get(k, k) for k in steps)
     with_screen = not a.no_screen
     if a.what in ("apply", "putback") and with_screen:
         steps = steps + STEPS["screen"] if a.what == "apply" else STEPS["screen-putback"] + steps
@@ -365,12 +387,18 @@ def main():
     if a.what in FOURTH:
         say("This is %s of the fourth kit (%s)." % (a.what, " + ".join(steps)))
         say("  %s" % FOURTH[a.what])
-        say("  Why: with the output size 3840x2560 the FX2 hands its second scaler a first-scaler size of 4336x2560, and the earlier sensor step (L5)")
-        say("  delivers 4336x2438: that was the crash of L13 + L5 + L16. %s" % ("H5 delivers 4336x2560." if "H5" in steps else "F16 keeps the size the records give."))
+        if a.what in ("og57", "og57si"):
+            say("  Why it should run: the FX2 hands its second scaler at least the output size; K5's records deliver 5760x3840 and K16's output is")
+            say("  5760x3840, so the two agree (emulated, NTSC and PAL). The 27.6 MB output picture gets id 0x43f, which K16 makes a 30.8 MB unit.")
+            say("  300 Mbps on the 100M and higher record settings: use a V90 SD card or CFexpress Type A. The lower settings keep their bit rate.")
+        else:
+            say("  Why: with the output size 3840x2560 the FX2 hands its second scaler a first-scaler size of 4336x2560, and the earlier sensor step (L5)")
+            say("  delivers 4336x2438: that was the crash of L13 + L5 + L16. %s" % ("H5 delivers 4336x2560." if "H5" in steps else "F16 keeps the size the records give."))
         say("  %s A restart is possible and harmless (the patch is gone after it). Each step writes nothing unless its" % STATUS[a.what])
         say("  bytes are exactly the stock bytes.")
-        say("  Camera settings: APS-C/Super 35 Off, S&Q off, File Format %s, %s. SteadyShot Off, Active and Dynamic Active" % (FORMATS[family], RATE[family]))
-        say("  and Proxy Recording all work with og2560 (issue 5); for a first run keep SteadyShot and Proxy off.")
+        fmts = TARGET_FORMATS.get(a.what, {}).get(family) or FORMATS[family].split(" (")[0]
+        say("  Camera settings: APS-C/Super 35 Off, S&Q off, File Format %s, %s. SteadyShot Off, Active and Dynamic Active" % (fmts, RATE[family]))
+        say("  and Proxy Recording all work with og2560 (issue 5); for a first run keep SteadyShot and Proxy off%s." % (" (with 5.7K: SteadyShot Off)" if "57" in a.what else ""))
         if a.what == "test6":
             say("  TEST 6 IS A DIAGNOSTIC STEP ONLY: look at the screen, but do NOT press REC. The encoder is still set for 2,160 rows; on an FX2 a recording")
             say("  in this state froze the camera until the battery was pulled (GitHub issue 5). For clips, use og2560.")
@@ -448,11 +476,14 @@ def main():
         say()
         say("Please send the newest folders in camera_private, and what the screen did on MOVIE: a picture (which shape?), purple flashing,")
         say("  a restart? If it recorded: the clip's properties (size, frame rate), or the clip. To return to stock: battery out for 10 seconds.")
-        if a.what in ("og2560", "test7"):
-            say("  For a clip of this test: the size MediaInfo shows (3840x2560 expected), whether it plays on a computer, and whether a recording")
+        if a.what in ("og2560", "test7", "og57", "og2560si", "og57si"):
+            say("  For a clip of this test: the size MediaInfo shows (%s expected), whether it plays on a computer, and whether a recording"
+                % ("5760x3840" if "57" in a.what else "3840x2560"))
             say("  stops by itself.%s" % (" PAL: the frame rate MediaInfo shows (25 expected)." if family == "PAL" else ""))
         say("  Do not use the power switch to undo it: it keeps the encoder step (L19) and leaves a mixed state. Battery out, or the putback.")
         say("  Do not change the frame rate or the file format while it is applied: the camera restarts by itself and is stock again (harmless).")
+        if "57" in a.what:
+            say("  5.7K clips do not play back in the camera (on the A7 IV they never did): check them on a computer, and do not retry playback.")
         say("  Before the next test: battery out for 10 seconds, switch on with the switch on STILL.")
         return
     if closing:

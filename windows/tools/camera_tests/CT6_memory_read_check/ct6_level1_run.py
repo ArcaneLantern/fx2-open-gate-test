@@ -554,6 +554,10 @@ DESIGN_LIBS["nrvoff_v1"] = {16: ("libJit_level16_nrvoff_v1.so", "767a7baffb48446
                             17: ("libJit_level17_nrvoff_v1.so", "306a1bd783b51aab75571a422e09cc54b0a724d3123925ffae2adc237252818a")}
 DESIGN_LIBS["nrsgate_v1"] = {16: ("libJit_level16_nrsgate_v1.so", "95d73dbf5be15a0efbb621b22a0e94a5f301db7f67857da5305319934f692788"),
                              17: ("libJit_level17_nrsgate_v1.so", "bf1120f9bc9bd50d4fd9800164bcf7fdf79cf346bd62609c698415180c4b7c83")}
+# nrsoff_v1 (2026-11-27, F1053): the spatial stage's own developer switch CamNrOnOff, byte 0x1a39189 0 to 1 (word 0x1a39188, guard 0x1a3918c).
+# Replaces nrsgate_v1 behind open_gate_apply.py --spatial. 1 word, 1 guard. Not run.
+DESIGN_LIBS["nrsoff_v1"] = {16: ("libJit_level16_nrsoff_v1.so", "5ff2dc8e4988f00c9bf52b0d89416535705616c4506d6201a25ff9c4a608e199"),
+                            17: ("libJit_level17_nrsoff_v1.so", "16d02878efff93f5a3f81dc36d521f9241e7b92a59318dc617326c5a455d641b")}
 LEVEL = 1
 LIB = HERE / "helper" / LIBS[1][0]
 LIB_SHA256 = LIBS[1][1]

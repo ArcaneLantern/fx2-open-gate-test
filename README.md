@@ -1,5 +1,7 @@
 # FX2 open gate: test kit (firmware 1.01)
 
+<p><b>New (2026-11-27, issue #7): a 5760 × 3840 (5.7K) test and XAVC S-I 4K, on NTSC and PAL. Not yet run on an FX2</b>: please try <code>open_gate_5760x3840_test</code> (PAL: <code>open_gate_5760x3840_pal</code>), see "5.7K and XAVC S-I".</p>
+
 <p><b>The true 3840 × 2560 open gate works on the FX2, on NTSC and on PAL (issue #5, 2026-11-26/27).</b> <code>open_gate_3840x2560_test</code> records 3840 × 2560 files of the whole 3:2 sensor area in XAVC HS 4K and XAVC S 4K at 23.98p. On a camera set to PAL, <code>open_gate_3840x2560_pal</code> records them in XAVC S 4K at 25p (see "PAL"). Two warnings from issue #5: <b>test 6 is a diagnostic step only, do not record in it</b> (the camera froze), and <b>the power switch does not undo the patch</b> (it leaves half of it applied: use the battery or the putback). This kit ports the open gate that works on the A7 IV to the Sony FX2 (ILME-FX2) firmware 1.01. The patch only writes to the camera's memory.</p>
 
 **Where it stands (2026-11-27):**
@@ -50,7 +52,7 @@
 - **One step more than the FX3 kit:** the raw write buffer. The FX2's movie raw write buffer holds the stock 16:9 read-out only (7040 × 3958). A full-height read-out needs 4,688 rows, as on the A7 IV, so step 1 enlarges it.
 - **No playback step.** The FX2 opens movie playback the A7 IV's way (its 8K decoder channel), and the A7 IV plays its own 3840 × 2560 clips. So in-camera playback should work, but it has not been tried (see "While it is applied").
 
-**What it does.** A true 3840 × 2560 (3:2) recording in XAVC HS 4K and XAVC S 4K at 23.98p (NTSC), or in XAVC S 4K at 25p (PAL), set in the camera's memory only. A battery pull removes it.
+**What it does.** A true 3840 × 2560 (3:2) recording in XAVC HS 4K and XAVC S 4K at 23.98p (NTSC), or in XAVC S 4K at 25p (PAL), set in the camera's memory only. A battery pull removes it. New, not yet run on an FX2: a 5760 × 3840 (5.7K) state and XAVC S-I 4K (see "5.7K and XAVC S-I").
 
 **Kits cannot be mixed up.** The FX3, A7S III and ZV-E1 kits' check libraries say NOT READY on an FX2. This kit's check says NOT READY on an A7 IV, an A7C II or an FX3. Every write step writes nothing unless each byte it changes holds exactly the FX2 1.01 stock value. All of this was checked in emulation.
 
@@ -74,6 +76,12 @@
 | `open_gate_3840x2560_pal.cmd` | **The same for a camera set to PAL** (fifth kit): raw write buffer, PAL sensor step P5 (mode 0x880, 25p), output size, encoder, rear screen. **Works on an FX2 set to PAL** (XAVC S 4K 25p) | **Yes: memory only** |
 | `open_gate_squeezed_pal.cmd` | The squeezed open gate for a camera set to PAL (fifth kit): raw write buffer, PAL sensor step Q5, rear screen. Works on an FX2 set to PAL | **Yes: memory only** |
 | `open_gate_putback_3840x2560.cmd` | Puts the 3840 × 2560 open gate back without a battery pull (NTSC or PAL) | Yes: memory only |
+| `open_gate_5760x3840_test.cmd` | **5.7K test** (issue #7): a 5760 × 3840 file, 300 Mbps on the 100M and higher settings. NTSC: XAVC HS 4K or XAVC S 4K 23.98p; a PAL-set camera takes the PAL step. Not yet run on an FX2 | **Yes: memory only** |
+| `open_gate_5760x3840_pal.cmd` | The 5.7K test for a camera set to PAL: XAVC S 4K 25p. Not yet run on an FX2 | **Yes: memory only** |
+| `open_gate_putback_5760x3840.cmd` | Puts the 5.7K state back without a battery pull | Yes: memory only |
+| `open_gate_3840x2560_si_test.cmd` | The 3840 × 2560 open gate **plus XAVC S-I 4K** (one more encoder step). The S-I step is not yet run on an FX2 | **Yes: memory only** |
+| `open_gate_5760x3840_si_test.cmd` | The 5.7K test **plus XAVC S-I 4K**. Not yet run on an FX2 | **Yes: memory only** |
+| `open_gate_putback_3840x2560_si.cmd`, `open_gate_putback_5760x3840_si.cmd` | Put the S-I states back without a battery pull | Yes: memory only |
 | `test7_frontend_hold.cmd` | **Test 7, the fallback** (fourth kit): raw write buffer, sensor step L5, one code word that keeps the first-scaler size (F16), output size, encoder. Only if test 5 gives no picture. Not yet run on an FX2 | **Yes: memory only** |
 
 Nothing in this kit writes to the camera's firmware or to its settings.
@@ -97,7 +105,7 @@ The macOS kit is the A7 IV kit's macOS port, carried over unchanged apart from t
 
 1. Python 3.9 or later: the one macOS offers with the Xcode Command Line Tools (run `xcode-select --install` in Terminal) works, or install it from python.org.
 2. Double-click `macos/setup.command`. It sets up Python and the USB library the scripts use. No Homebrew and no driver are needed.
-3. Each Windows launcher has a macOS twin with the same name: `macos/check_readonly.command`, `dump_info.command`, `open_gate_apply.command`, `open_gate_apply_no_screen.command`, `open_gate_apply_no_meta.command`, `open_gate_putback.command`, `screen_putback.command`, `test1_fullheight_band.command`, `test2_squeeze_only.command`, `test3_output_size.command`, `test4_output_size_encoder.command`, `open_gate_squeezed.command`, `test5_real_rows.command`, `test6_real_rows_output_size.command`, `open_gate_3840x2560_test.command`, `open_gate_3840x2560_pal.command`, `open_gate_squeezed_pal.command`, `open_gate_putback_3840x2560.command`, `test7_frontend_hold.command`. Everything below that says `.cmd` works the same with the `.command` file. (The first FX2 tester ran the macOS launchers: they work.)
+3. Each Windows launcher has a macOS twin with the same name: `macos/check_readonly.command`, `dump_info.command`, `open_gate_apply.command`, `open_gate_apply_no_screen.command`, `open_gate_apply_no_meta.command`, `open_gate_putback.command`, `screen_putback.command`, `test1_fullheight_band.command`, `test2_squeeze_only.command`, `test3_output_size.command`, `test4_output_size_encoder.command`, `open_gate_squeezed.command`, `test5_real_rows.command`, `test6_real_rows_output_size.command`, `open_gate_3840x2560_test.command`, `open_gate_3840x2560_pal.command`, `open_gate_squeezed_pal.command`, `open_gate_putback_3840x2560.command`, `open_gate_5760x3840_test.command`, `open_gate_5760x3840_pal.command`, `open_gate_putback_5760x3840.command`, `open_gate_3840x2560_si_test.command`, `open_gate_5760x3840_si_test.command`, `open_gate_putback_3840x2560_si.command`, `open_gate_putback_5760x3840_si.command`, `test7_frontend_hold.command`. Everything below that says `.cmd` works the same with the `.command` file. (The first FX2 tester ran the macOS launchers: they work.)
 
 **Quit Lightroom, Photos and Image Capture before you run the kit.** They take hold of the camera's card; Lightroom froze a tester's FX2 on "Accessing".
 
@@ -117,7 +125,7 @@ If macOS refuses to open a .command file ("unidentified developer" or "could not
 6. **Stop waiting** ends a wait for the camera. It never interrupts a step that is talking to the camera.
 7. Afterwards, **Export logs** writes a zip to `Download/FX2-OpenGate/` on the phone: send that zip back.
 
-**Test 1: band**, **Test 2: squeeze**, **Test 3: + output size** and **Test 4: + encoder** run the diagnostic tests; like the apply, they start only after a check on this phone said READY. App 0.4 adds **Squeezed open gate (works)**, **Test 5: real rows**, **Test 6**, **3840x2560** and **Test 7: fallback** (the fourth kit). App 0.5 adds **3840x2560 PAL (25p)**, **Squeezed PAL (25p)** and **Put back 3840x2560** (the fifth kit). If the newest check cannot tell NTSC from PAL, the app asks. App 0.6: the closing dump asks you to confirm that the switch is on MOVIE.
+**Test 1: band**, **Test 2: squeeze**, **Test 3: + output size** and **Test 4: + encoder** run the diagnostic tests; like the apply, they start only after a check on this phone said READY. App 0.4 adds **Squeezed open gate (works)**, **Test 5: real rows**, **Test 6**, **3840x2560** and **Test 7: fallback** (the fourth kit). App 0.5 adds **3840x2560 PAL (25p)**, **Squeezed PAL (25p)** and **Put back 3840x2560** (the fifth kit). If the newest check cannot tell NTSC from PAL, the app asks. App 0.6: the closing dump asks you to confirm that the switch is on MOVIE. App 0.7 adds **5.7K (NTSC)**, **5.7K PAL (25p)**, **Put back 5.7K**, **3840x2560 + S-I** and **5.7K + S-I** (issue #7; not yet run on an FX2).
 
 **Self-test** and **Dry run** need no camera and send nothing.
 
@@ -172,6 +180,35 @@ Run these in order, each from a cold boot. Stop at the first one that restarts t
 Run each as in "How to run each test" above (cold boot on STILL, `check_readonly`, the launcher, MOVIE when it asks, replug). The 3840 × 2560 test has five steps with a replug between them.
 
 **Please send** the zipped `windows/camera_private` folder and, for each test, what the screen did. For a clip: its size as MediaInfo shows it, and whether a recording stopped by itself. In-camera playback of 3840 × 2560 clips works on an FX2; if a clip ever says "Unable to display", do not try again.
+
+## 5.7K and XAVC S-I (issue #7, 2026-11-27; not yet run on an FX2)
+
+**5.7K** is the A7 IV's real 5760 × 3840 state, ported step by step. On the A7 IV it records 5760 × 3840 files with real detail, at 300 Mbps, with I and P pictures only (no duplicate frames), and MP4 headers that say 5760 × 3840.
+
+| Step | NTSC | PAL | What |
+|---|---|---|---|
+| 1 | L13 | L13 | the raw write buffer (as for 3840 × 2560) |
+| 2 | **K5** (`og57n_fx2_v1`) | **J5** (`og57n880_fx2_v1`) | the full-height sensor read-out, with records that make the first scaler give 5760 × 3840 |
+| 3 | **K16** (`og57cp_fx2_v3`) | K16 | four scaler units, a 30.8 MB buffer for the output picture (id 0x43f), the output size 5760 × 3840 |
+| 4 | **K19** (`ogfile57r300m1_fx2_v4`) | K19 | the encoder side: two encoder cores, 300 Mbps on the 100M and higher settings, I and P pictures only, the MP4 headers at 5760 × 3840 |
+| (4) | with `--no-meta`: M19 (`ogfile57r300m1_fx2_v3`) | M19 | the same, but the MP4 headers keep 3840 × 2160 |
+| 5 | S16 | S16 | the rear screen at 3:2 (the same step as for 3840 × 2560) |
+
+What was checked for the FX2 in particular, in emulation against the FX2's own code:
+- **The FX2's first-scaler override** (the cause of the old L16 crash) asks for no more than K5's records give: 5760 × 3840 on both sides, NTSC and PAL.
+- **The output buffer:** a 5760 × 3840 picture is 27.6 MB, more than the 13.3 MB buffers. The FX2 asks for id 0x43f above that size, and the stock FX2 has no such buffer. K16 makes 0x43f a 30.8 MB unit, the A7 IV's fix. In the FX2's own memory manager it opens, and the other 4K movie buffers still open beside it.
+- **Four scaler units:** the FX2's split rule is the A7C II's and reads its setting byte at 0x18f62e8. Every FX2 dump so far reads that byte and its neighbours as zero, as K16 expects.
+- Each step writes nothing unless every byte it changes holds the FX2 1.01 stock value, and refuses the other family's state.
+
+**How to run it:** as the 3840 × 2560 test (cold boot on STILL, `check_readonly`, the launcher, MOVIE when asked, replug).
+- **NTSC:** XAVC HS 4K or XAVC S 4K at 23.98p. **PAL:** XAVC S 4K at 25p.
+- **SteadyShot Off**, APS-C/Super 35 off, S&Q off, Proxy off.
+- **A V90 SD card or CFexpress Type A**: the 100M and higher settings record at 300 Mbps. The lower settings keep their bit rate.
+- Record a short clip and check it on a computer: MediaInfo should show 5760 × 3840. 5.7K clips do not play back in the camera (on the A7 IV they never did). Don't retry playback.
+
+**XAVC S-I 4K** (issue #7 found that S-I stops REC at once with the 3840 × 2560 patch, because the encoder step covers only XAVC HS and XAVC S). `open_gate_3840x2560_si_test` and `open_gate_5760x3840_si_test` add one encoder step for XAVC S-I 4K (AVC intra 4:2:2 10-bit): **I19** at 3840 × 2560, **G19** at 5760 × 3840. On the A7 IV the 5.7K S-I state records at 24p; the 3840 × 2560 one was never run there. With the S-I step applied, XAVC HS and XAVC S still record as before.
+
+**Please send** the zipped `windows/camera_private` folder, MediaInfo's size, frame rate and bit rate for a clip, and what the rear screen showed.
 
 ## PAL (fifth kit; works on an FX2, 2026-11-26)
 

@@ -211,3 +211,6 @@ if __name__ == "__main__":
         build(src, mode, name)
     # ogh2560880_fx2_v1 (2026-11-27, PAL): the real-rows records with mode 0x880's cells and PAL stored record (combine above)
     combine()
+    # og57n_fx2_v1 / og57n880_fx2_v1 (2026-11-27, GitHub issue 7: 5.7K): the A7 IV's og57n_v1 / og57n880_v1 (first scaler 5760x3840, F906)
+    for src, mode, name in (("og57n_v1", 0x8C0, "og57n_fx2_v1"), ("og57n880_v1", 0x880, "og57n880_fx2_v1")):
+        build(src, mode, name)

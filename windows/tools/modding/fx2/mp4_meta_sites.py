@@ -66,6 +66,11 @@ SHIFTED = {"a7c2_201": -0x390C}
 # A1 II 4.00 (2026-11-26, modding/A1M2_PORT_ENCODER.md): the A7 IV's writer moved by +0x15c4 (track config 0x2240dc, stsd entry 0x225690, PROF entry
 # 0x22737c); all seven size sites found by 68 bytes of context, unique, the same instruction. Checked by build/emu_mp4_meta.py --build a1m2_400.
 SHIFTED["a1m2_400"] = 0x15C4
+# FX2 1.01 (2026-11-27, the FX2's 5.7K port, GitHub issue 7): the A7 IV's writer moved by -0x37b4 (modding/FX2_PORT_ENCODER.md). All nine size sites
+# (both sizes) found by 32 bytes of the A7 IV's context, unique, at A7 IV - 0x37b4, the same instructions. SHIFTED is looked up before OTHER_BUILDS,
+# so the FX2's 3840x2560 heights come from here now: the same two sites, bytes and notes as its OTHER_BUILDS entry (ogfile2560_hs_s_fx2_v1/_v2
+# rebuild byte for byte). Checked by build/emu_mp4_meta.py --build fx2_101 --both.
+SHIFTED["fx2_101"] = -0x37B4
 
 
 # A6700 2.00 (2026-11-26, modding/A6700_PORT_ENCODER.md): the same writer source in another compile (libmpr.so 3,180,832 bytes). Track config
