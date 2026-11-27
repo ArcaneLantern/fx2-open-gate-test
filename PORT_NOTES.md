@@ -1,6 +1,6 @@
 # Port notes: A7 IV 6.02 open gate → FX2 1.01 (in the FX3 kit's shape)
 
-Everything here was read from the FX2 1.01 firmware update (`BODYDATA.DAT`, SHA-256 `7c12d1e4…9c9a`). Every step of the kit was emulated: Unicorn ran the FX2's own code where it mattered, and the built helper libraries ran against a model FX2. **On FX2s set to NTSC the squeezed open gate (issue #1) and the true 3840 × 2560 open gate (issue #5) work. The PAL steps (fifth kit) have not run on a camera.**
+Everything here was read from the FX2 1.01 firmware update (`BODYDATA.DAT`, SHA-256 `7c12d1e4…9c9a`). Every step of the kit was emulated: Unicorn ran the FX2's own code where it mattered, and the built helper libraries ran against a model FX2. **On FX2s the squeezed open gate (issue #1, NTSC) and the true 3840 × 2560 open gate (issue #5, NTSC and PAL) work.**
 
 The reference designs are the A7 IV's default open-gate state. It works on an A7 IV (2026-11-18 onwards): a true 3840 × 2560 file of the whole 3:2 sensor area in XAVC HS 4K and XAVC S 4K at 24p. Since 2026-11-24 its MP4 headers say 3840 × 2560 (Resolve opens the file at 3:2), and the 3:2 rear screen shows the picture with the focus frames. The kit's shape (launchers, the read-only check first, the closing dump, the FX2's own De-Squeeze Display kept and set for the 3:2 picture) is the FX3 kit's, which records open gate on two FX3s.
 
@@ -31,7 +31,7 @@ The kept kprint record is identical each time:
   - **0x608 (key 0x6a3, 27,864,320 bytes = the stock 3,958 rows, not enlarged)** when setting byte 0x18f62d8+0x7d is 1.
 
   That byte reads 0 in every dump, because the camera core's settings block is zero during a USB session. Which id the FX2 uses in its 4K mode is not known.
-- **The snapshot image.** `/cp/tomco.txt` saves a "snapshot debug image" on an exception: `snapshotdbg_addr=0x09A21E00`, 48 MB, tag `SOLID_SSHOT` in the code. Whether it survives the restart is not known.
+- **The snapshot image.** `/cp/tomco.txt` saves a "snapshot debug image" on an exception: `snapshotdbg_addr=0x09A21E00`, 48 MB, tag `SOLID_SSHOT` in the code. It survives a restart without power loss (issue #5 part 4: after the 60p restart the dump found `SOLID_SSHOT` with 11,263 non-zero bytes).
 
 **The second kit: a diagnostic ladder** (`fx2_apply.py test1 | test2`; the full apply is unchanged).
 - **Test 1 = L13 + B5.**
@@ -145,7 +145,7 @@ The emulated view equals the view the camera saved, bytes 1 to 0x53, in the stoc
 - **The power switch keeps half of the patch:** after off/on, every coprocessor site was stock (L13, H5, L16, S16) and every main-processor site of L19 still applied (101 av-cam, 4 libmpr rows, 2 MP4 heights). The coprocessor restarts; the main processor keeps its memory.
 - **PAL, read-only** (a camera set to PAL, fx2read_v4): 4K 25p runs mode **0x880** (index 9; the saved resize view says mode 0x880). Its stored record at 0x24de61c equals the FX2 calculator's record under the **50 Hz input table** except run-time flag bytes (13 bytes). Mode 0x8c0's record there is the 24.00p one: of `ogsq_fx2_v1`'s 31 design bytes 22 are stock, so L5 and H5 refuse on PAL. Every other stage (sensor column 5 after movie entry, 7040 × 3958 stage, 4336 × 2438 first scaler, output records, raw write buffer) is the NTSC one. Every NTSC dump reads mode 0x880's record 22/31 against the PAL design.
 
-**The fifth kit** (`fx2read_v5`; APK 0.5; the PAL steps have not run on a camera):
+**The fifth kit** (`fx2read_v5`; APK 0.5; the PAL steps ran on a camera since, see the next section):
 
 - **Q5 / Q6 = `ogsq880_fx2_v1`**: `ogsq_v3` moved to mode 0x880 (the A7 IV's `ogsq880_v1`, which works on a PAL A7 IV, F965), built by `build_og_fx2.py` with the 50 Hz table: 11 sensor cells of mode 0x880's rows (other addresses than L5's), the shared record pair 0xdf9958 / 0xdfa510 (the same bytes as L5's: 0x880 and 0x8c0 share the pair), and 31 bytes of the stored record at 0x24de61c.
 - **P5 / P6 = `ogh2560880_fx2_v1`**: Q5's cells and stored record with H5's two records (`combine()` in `build_og_fx2.py`, which asserts that H5's stored record and cells are L5's and that the pair is the shared one). 13 sites, 6,024 bytes.
@@ -165,7 +165,28 @@ The emulated view equals the view the camera saved, bytes 1 to 0x53, in the stoc
 
 Every other library is rebuilt to its fourth-kit pin.
 
-**Open:** PAL on a camera (Q5, P5, and L19 at 25p, whose 25p descriptors are in the design but have not been recorded); why the SteadyShot margin runs.
+**Open (then):** PAL on a camera; why the SteadyShot margin runs. PAL is answered below.
+
+## PAL works, and part 4 (2026-11-26, issue #5; the sixth publish, 2026-11-27)
+
+Evidence: `a7iv_map/evidence/fx2/tester_2026-11-27_pal_fifth/` (23 sessions, fx2read_v5, macOS) and `tester_2026-11-27_ntsc_part3-4/` (NTSC, fx2read_v4).
+
+**PAL** (the same FX2 set to PAL, fifth kit, each run from a battery pull, each check READY and "camera set to: PAL"):
+- `og2560 --pal` (L13 + P5 + L16 + L19 + S16), twice: XAVC S 4K 4:2:2 **3840 × 2560 at 25.000 fps**, DAR 3:2 with no "original" size in MediaInfo, 133 Mb/s, every frame decodes. Dump `233102` on MOVIE: register column 5, mode 0x880's record 31/31 as the design, raw buffer 4 applied, output record 0 3840 × 2560 format code 2, view first stage 7040 × 4688 → first scaler 4336 × 2560 → output 3840 × 2560 in mode 0x880, agreeing with the records; screen words 18 applied; av-cam 101 target; no exception. So L19's 25p descriptors work.
+- SteadyShot Active on PAL (dump `233413`): view first scaler 4336 × 2877, the 11% margin, as on NTSC; it runs.
+- `squeeze --pal` (L13 + Q5 + S16): XAVC S 4K 3840 × 2160 at 25 fps, the squeezed file; dump `233942`: view 4336 × 2438 → 3840 × 2160 in mode 0x880, agreeing.
+- The guards: a `--pal` dry run refused while the newest check read NTSC; after the power switch the check (`232552`) read 48 coprocessor sites stock with L19 applied and printed the warning; a battery pull cleared it.
+- On a PAL FX2, XAVC HS 4K is 50p only: PAL means XAVC S 4K 25p.
+- **The closing dump ran before the switch was on MOVIE** in both apply runs (`231939`, `232944`: view of mode 0x5020). On macOS the camera is a USB drive again within seconds of each session (the five steps ran 5 s apart), and the old wait took that re-enumeration for the unplug. The wait now needs the camera seen for 6 s, then gone for 3 s, and the dump asks for a confirmation that the switch is on MOVIE.
+
+**Part 4 (NTSC, og2560):**
+- Proxy Recording works in all three settings (XAVC S HD 1280 × 720, XAVC HS HD 1920 × 1080 at two rates); the proxy holds the whole 3:2 picture squeezed into 16:9, same frame count as the main clip.
+- SteadyShot **Dynamic Active** works: view first scaler 5486 × 3658 = 3840 × 2560 / (1 − 19660/65536). So **19660 is Dynamic Active's margin word (30%) and 7208 Active's (11%)**, both applied with the switch word at 3. XAVC S 4K takes Dynamic Active and proxy at once.
+- **A frame-rate change (24p → 60p) with the patch applied restarted the camera.** Dump `230710` on STILL: every site stock, L19's main-processor sites too (a crash restart clears them, the power switch does not); kprint: CAM_VD_SEQUENCE, data abort, pc 0x507dae, lr 0x507da1, DFAR 0: the forced "S-Ele Refresh ng" exception; the snapshot image survives the restart (`SOLID_SSHOT`, 11,263 non-zero bytes).
+
+**This publish:** the report prints kprint's exception record, names the margin (Active / Dynamic Active), says when the saved view is of another mode (the camera was not on MOVIE), and names P5/Q5 in a dump from mode 0x880's record. `fx2_apply.py` asks for XAVC S 4K 25p on PAL, gives the closing note the family's rate, warns against frame-rate changes, and on macOS says to quit Lightroom, Photos and Image Capture. APK 0.6. No library changed.
+
+**Open:** heat over long recordings (a 30–60 min PAL run is under way); why the SteadyShot margin's view/records mismatch runs while L5 + L16's crashed; HDMI 2160p.
 
 ## What the FX2 is
 
@@ -239,7 +260,7 @@ There is no C step (the FX2 has its own De-Squeeze Display) and no playback step
 | sensor object; drive-parameter pointer | 0x12b9ce0; control +0x684 | 0x1750860; **control +0x6ac** | the FX2's control object puts every field 8 bytes on from the A7C II's |
 
 - **The stored record.** With the design's cells, the FX2's own calculator gives the A7C II port's records exactly, stock and patched: 31 bytes differ, with the vertical sampling ratio 27/32 at +6/+7 (`evidence/fx2/ogsq_fx2_v1_drvparam_records_emu.json`). No other mode's record changes.
-- **PAL.** `ogsq880_fx2_v1` (mode 0x880, 25p) is built and emulated as well. The kit does not ship it, as in the FX3 kit.
+- **PAL.** `ogsq880_fx2_v1` (mode 0x880, 25p) is built and emulated as well. Since the fifth kit it is step Q5, and its real-rows form P5 (see "PAL works").
 
 ### L16: output size (`outsz2560_fx2_v1`)
 
@@ -346,11 +367,8 @@ Full hashes are in `fx2_run.py`. A result belongs to this kit only if its header
 
 ## Not known yet
 
-- **The PAL steps on a camera.**
-- **The vertical squeeze lever.** On the A7 IV, the stored record's +6/+7 = 27/32 makes the resize calculation keep the whole 3:2 window. Without it the second scaler took a 16:9 cut (F680, F681).
-  - The FX2's resize code (CalcRC 0x5200da, RC calc 0xbd38ba, working structure 0x15e42d0) is a newer revision with other structure offsets. It was compared with the A7 IV's but not run alone, because its input block differs.
-  - If it does not act the same way, the file shows a 16:9 cut of the full-height picture (no crash expected).
-  - The closing dump searches the resize pages for the sizes involved.
+- **The PAL steps on a camera:** answered (issue #5): they work.
+- **The vertical squeeze lever:** answered (issue #5). The squeezed files and the 3840 × 2560 files hold the whole sensor height: a frame and a full-sensor still have the same framing within about 2%.
 - **The resize result block's address on the FX2.** Its neighbours moved by different amounts, so the dump decoder searches the resize pages (0x190c000..) for known sizes instead of reading one block.
 - **The 4K format code:** read, 2 (the tester's dump pages, 2026-11-26).
 - **The encoder request's word +0x88.** The FX2's descriptor matcher has an extra branch: with 2 or 5 it skips these 4K descriptors, so even stock would fail; the emulation uses 3, the A7 IV's path. The value a real recording sends is not traced.

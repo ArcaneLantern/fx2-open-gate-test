@@ -371,6 +371,27 @@ def decode_pages(pages):
                              "bytes_at_3840x2560": int(3840 * 2560 * factor) if factor else None})
         if recs_out is not None:
             out["output_records"] = recs_out
+    # the coprocessor's kprint log (0xe0000, kept across a restart without power loss): its exception record, if any (GitHub issue 5 part 4:
+    # the restart after a frame-rate change left "ip/sp/lr/pc", "Running Task", "cause", "DFAR" lines; pc 0x507dae = the forced exception
+    # "FW: S-Ele Refresh ng force exception" at 0x507da0, a pipeline stage still busy after 11 frames)
+    kp = b"".join(blob for _, (name, blob) in sorted(pages.items()) if name == "kprint")
+    if kp:
+        rec = {"pcs": []}
+        for s in (x.decode("ascii", "replace") for x in re.findall(rb"[ -~\t]{4,}", kp)):
+            m = re.search(r"lr: (0x[0-9a-f]+)\s+pc: (0x[0-9a-f]+)", s)
+            if m:
+                rec["pcs"].append(m.group(2))
+                rec.setdefault("lr", m.group(1))
+            for key, pat in (("task", r"Running Task: (\S+)"), ("cause", r"cause: \d+\(([^)]+)\)"), ("dfar", r"DFAR: (0x[0-9a-f]+)"),
+                             ("firmware", r"FirmVer: (\S+)")):
+                m = re.search(pat, s)
+                if m:
+                    rec.setdefault(key, m.group(1))
+            if "Snapshot Debug Image Saved" in s:
+                rec["snapshot_saved"] = True
+        rec["exception"] = bool(rec["pcs"])
+        rec["forced_refresh_exception"] = any(int(x, 16) in (0x507DAE, 0x507DAC) for x in rec["pcs"])
+        out["kprint"] = rec
     # v2: the snapshot debug image's first pages (its format is not known): the tag, whether anything is there, and its printable strings
     sn = ref.get("snapshot")
     if sn:
@@ -514,6 +535,19 @@ def selftest(lib):
     return done
 
 
+def margin_name(rv):
+    """Which SteadyShot margin word a resize view's first-scaler request implies: 0xbd6f34's words are 7208 (SteadyShot Active, 11%) and
+    19660 (Dynamic Active, 30%) on every FX2 dump (GitHub issue 5: 4336x2877 with Active, 5486x3658 with Dynamic Active, for 2,560 rows)."""
+    rows, out = rv["first_scaler"][1], rv["output"][1]
+    if not rows or rows <= out:
+        return "none"
+    m = round(65536 * (1 - out / rows))
+    for word, name in ((7208, "SteadyShot Active, 11%"), (19660, "SteadyShot Dynamic Active, 30%")):
+        if abs(m - word) <= 40:
+            return name
+    return "margin word about %d of 65536" % m
+
+
 def camera_state(f):
     """v5: which sensor-side design the coprocessor sites show, whether the camera is set to NTSC or PAL, the encoder side's state, and a
     warning for the state the power switch leaves on an FX2 (GitHub issue 5: it restarts the coprocessor, so every coprocessor site is
@@ -547,13 +581,17 @@ def camera_state(f):
     else:
         family = "not known from this result"
     one = lambda s: next(iter(s)) if len(s) == 1 else None
-    c_, p_, r_ = one(cells), one(pal) if pal else "STOCK", one(recs)
+    pal_d = d.get("stored_record_design_pal_bytes")
+    from_dump = not pal and pal_d and pal_d["of"] and pal_d["design"] == pal_d["of"]   # a dump: mode 0x880's cells are not read, its record is
+    c_, p_, r_ = one(cells), one(pal) if pal else "TARGET" if from_dump else "STOCK", one(recs)
     sensor = {("STOCK", "STOCK", "STOCK"): "none (stock)",
               ("TARGET", "STOCK", "TARGET"): "L5 ogsq_fx2_v1 (NTSC squeeze)",
               ("TARGET", "STOCK", "TEST2"): "H5 ogh2560_fx2_v1 (NTSC real rows)",
               ("TEST", "STOCK", "TEST"): "B5 fhband_fx2_v1 (band test)",
               ("STOCK", "TARGET", "TARGET"): "Q5 ogsq880_fx2_v1 (PAL squeeze)",
               ("STOCK", "TARGET", "TEST2"): "P5 ogh2560880_fx2_v1 (PAL real rows)"}.get((c_, p_, r_))
+    if sensor and from_dump and p_ == "TARGET":
+        sensor += " (from mode 0x880's stored record and the picture records: a dump does not read mode 0x880's cells)"
     if sensor is None and not pal and c_ == "STOCK" and r_ in ("TARGET", "TEST2"):
         sensor = "the records of a PAL step (Q5/P5) with mode 0x8c0's cells stock: a PAL design, if this is a dump (the dump does not read mode 0x880's cells)"
     if sensor is None:
@@ -633,12 +671,16 @@ def report(session, facts, which):
                          % (rv["address"], rv["flags"][4], rv["flags"][5], "the first-scaler size follows the output size" if rv["follows_output_size"] else "no override",
                             *rv["first_stage"], *rv["crop"], *rv["first_scaler"], *rv["output"], rv["mode"]))
             if "records_in_place" in rv:
+                mode_ok = rv["mode"] in ("0x8c0", "0x880")       # the 4K 23.98p / 25p modes; another mode = the view of the last mode run (e.g. STILL)
                 lines.append("  the picture records in place (%s) give a first scaler of %dx%d: %s"
                              % (rv["records_in_place"], *rv["first_scaler_by_records"],
                                 "the view agrees" if rv["sizes_agree"] else
-                                # issue 5: with SteadyShot Active the view's first scaler is raised by the margin word (4336x2877 for 2,560
-                                # rows) and the camera records clean 3840x2560 files; without a margin a difference was the L5 + L16 crash
-                                "the view DIFFERS, by more than the output needs: a margin (SteadyShot Active), which ran on an FX2 with og2560"
+                                "the view is of mode %s, not the 4K movie mode (0x8c0 / 0x880): the camera was not on MOVIE at 4K when it was saved, "
+                                "so the two are not compared" % rv["mode"] if not mode_ok else
+                                # issue 5: with SteadyShot Active / Dynamic Active the view's first scaler is raised by a margin word (4336x2877
+                                # and 5486x3658 for 2,560 rows) and the camera records clean 3840x2560 files; without a margin a difference was
+                                # the L5 + L16 crash
+                                "the view DIFFERS, by more than the output needs: a SteadyShot margin (%s), which runs on FX2s with og2560" % margin_name(rv)
                                 if rv["first_scaler"][1] > max(rv["output"][1], rv["first_scaler_by_records"][1]) and rv["output"][1] <= rv["first_scaler_by_records"][1] else
                                 "the view DIFFERS (the second scaler is handed a size the first scaler does not deliver; "
                                 "the view may also be left from an earlier state)"))
@@ -648,7 +690,7 @@ def report(session, facts, which):
             # so judge from the view: the override stores max(records' first scaler, output / (1 - margin)), so a margin is in use when the
             # view exceeds both.
             fs = rv and "records_in_place" in rv and (rv["first_scaler"][1], rv["output"][1], rv["first_scaler_by_records"][1])
-            note = ("margin in use: the view asks the first scaler for %d rows for %d output rows, %.1f%%" % (fs[0], fs[1], 100.0 * (1 - fs[1] / fs[0]))
+            note = ("margin in use: the view asks the first scaler for %d rows for %d output rows, %.1f%% (%s)" % (fs[0], fs[1], 100.0 * (1 - fs[1] / fs[0]), margin_name(rv))
                     if fs and fs[0] > max(fs[1], fs[2])
                     else "no margin in use: the view's first scaler is no larger than the records or the output give" if fs
                     else "whether one is in use shows in the resize view")
@@ -657,11 +699,22 @@ def report(session, facts, which):
         fh = next((x for x in f["coprocessor_sites"] if x["name"] == "fehold"), None)
         if fh:
             lines.append("fallback code word (fehold_fx2_v1) at %s: %s" % (fh["address"], fh["state"]))
+        kr = d.get("kprint")
+        if kr:
+            if kr["exception"]:
+                lines.append("kprint (kept across a restart without power loss): an EXCEPTION RECORD: task %s, %s, pc %s, lr %s, DFAR %s%s%s"
+                             % (kr.get("task", "?"), kr.get("cause", "?"), ", ".join(kr["pcs"]), kr.get("lr", "?"), kr.get("dfar", "?"),
+                                "; the forced 'S-Ele Refresh ng' exception (a pipeline stage still busy after 11 frames: the camera restarted)"
+                                if kr["forced_refresh_exception"] else "", "; snapshot saved" if kr.get("snapshot_saved") else ""))
+            else:
+                lines.append("kprint: no exception record")
         sh = d.get("snapshot_head")
         if sh:
-            lines.append("snapshot debug image at %s: %s; tag SOLID_SSHOT %s; %d non-zero bytes in its first pages; first bytes %s"
-                         % (sh["address"], "all zero" if sh["all_zero"] else "HOLDS DATA", "found" if sh["tag_found"] else "not found", sh["nonzero_bytes"], sh["first_bytes"][:48]))
-            for s in sh["strings"][:20]:
+            # the area always holds some bytes (12,800 non-zero on a camera that never crashed in this power-on); only the tag marks a saved image
+            lines.append("snapshot debug image at %s: %s; %d non-zero bytes in its first pages; first bytes %s"
+                         % (sh["address"], "all zero" if sh["all_zero"] else "a SAVED SNAPSHOT (tag SOLID_SSHOT found: kept across a restart without power loss)"
+                            if sh["tag_found"] else "no snapshot (no SOLID_SSHOT tag; the bytes there are other data)", sh["nonzero_bytes"], sh["first_bytes"][:48]))
+            for s in (sh["strings"][:20] if sh["tag_found"] else []):
                 lines.append("  snapshot string: %s" % s[:120])
         ss = d.get("scaler_state")
         if ss:

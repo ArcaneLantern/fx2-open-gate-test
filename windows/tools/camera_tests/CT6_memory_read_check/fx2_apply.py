@@ -21,7 +21,8 @@ checked against the FX2's own code in emulation. On FX2s set to NTSC the squeeze
   camera's dump showed it). The PAL steps are the same designs moved to mode 0x880: Q5 (ogsq880_fx2_v1, for L5; the A7 IV's ogsq880_v1,
   which works on a PAL A7 IV) and P5 (ogh2560880_fx2_v1, for H5), put back by Q6 / P6. Every other step is the same on NTSC and PAL
   (L19 covers 25p as well as 23.98p). With --pal the targets use them: og2560 = L13 + P5 + L16 + L19 + S16, squeeze = L13 + Q5 + S16.
-  The PAL steps are emulated against a PAL FX2's own records, NOT RUN on a camera yet.
+  Both WORK on an FX2 set to PAL (GitHub issue 5, 2026-11-26): 3840x2560 and the squeezed 3840x2160 at 25.000 fps in XAVC S 4K, SteadyShot
+  Active too. On PAL the FX2's XAVC HS 4K is 50p only, so PAL means XAVC S 4K 25p.
 
   apply    five steps, each its own USB session: L13 raw write buffer (dmmwb4688_fx2_v1), L5 sensor side (ogsq_fx2_v1), L16 output size
            (outsz2560_fx2_v1), L19 encoder side with the MP4 headers (ogfile2560_hs_s_fx2_v2), S16 rear screen at 3:2 with the focus frames
@@ -110,8 +111,16 @@ NO_PAL = ("test1",)
 RUNNER = HERE / "fx2_run.py"
 LISTER = HERE.parent / "CT1_usb_first_contact" / "ct1_stage2_service.py"
 STILL = "STILL (the Still/Movie switch on STILL)"
-MOVIE = "MOVIE (the Still/Movie switch on MOVIE; File Format XAVC HS 4K or XAVC S 4K, 24p)"
 RATE = {"NTSC": "24p (23.98p)", "PAL": "25p"}
+# the 4K formats the open gate is set up for: on a PAL-set FX2 XAVC HS 4K is 50p only (GitHub issue 5), so PAL is XAVC S 4K 25p alone
+FORMATS = {"NTSC": "XAVC HS 4K or XAVC S 4K", "PAL": "XAVC S 4K (on PAL the FX2's XAVC HS 4K is 50p only)"}
+MOVIE_BY = {f: "MOVIE (the Still/Movie switch on MOVIE; File Format %s, %s)" % (FORMATS[f].split(" (")[0], RATE[f]) for f in RATE}
+MOVIE = MOVIE_BY["NTSC"]
+# test results on FX2s (GitHub issues 1 and 5), printed with each target in place of the earlier "not yet run"
+STATUS = {"test5": "Ran on an FX2: a steady picture (GitHub issue 5).",
+          "test6": "Ran on an FX2: a steady picture, but a recording froze the camera (GitHub issue 5).",
+          "og2560": "WORKS on FX2s set to NTSC (23.98p) and to PAL (25p): 3840x2560 files (GitHub issue 5).",
+          "test7": "Not run on an FX2 (not needed: og2560 works)."}
 
 
 def last_family():
@@ -214,21 +223,34 @@ def wait_for_drive(first, timeout=600):
     return True
 
 
-def wait_for_replug(timeout=900):
-    """Wait until the camera has been unplugged and shows up as a USB drive again. False on timeout."""
+def wait_for_replug(timeout=900, settle=6, gone=3):
+    """Wait until the camera has been unplugged and shows up as a USB drive again. False on timeout.
+    After a session the camera comes back on USB by itself: on macOS it is a drive again within seconds (GitHub issue 5, where the
+    closing dump then ran before the switch was on MOVIE). That short gap is not an unplug. So: first the camera must be seen for
+    `settle` seconds in a row (or be gone for 10, if it was unplugged at once), then be gone for `gone` seconds in a row, then be a drive."""
     end = time.time() + timeout
-    while usb_state() != "other":                    # still plugged in, as a drive or in service mode
+    seen = missing = 0
+    while seen < settle and missing < 10:            # settle: the camera back after the session, steadily
         if time.time() > end:
             return False
+        if usb_state() == "other":
+            seen, missing = 0, missing + 1
+        else:
+            seen, missing = seen + 1, 0
         time.sleep(1)
-    while usb_state() != "drive":
+    while missing < gone:                            # the unplug: gone for `gone` seconds in a row
+        if time.time() > end:
+            return False
+        missing = missing + 1 if usb_state() == "other" else 0
+        time.sleep(1)
+    while usb_state() != "drive":                    # the replug
         if time.time() > end:
             return False
         time.sleep(2)
     return True
 
 
-def movie_session(test=None):
+def movie_session(test=None, family="NTSC"):
     """The closing read-only session, taken in movie mode: it shows the sensor in the open-gate mode and the panel type."""
     say()
     say("=" * 78)
@@ -247,6 +269,10 @@ def movie_session(test=None):
     if not wait_for_replug():
         say("The camera did not come back as a USB drive. The steps are applied all the same.")
         return
+    # the replug is seen; the switch position is not, so ask (issue 5: a dump taken on STILL shows nothing of the movie state)
+    if input("Is the switch on MOVIE now? Press Enter to take the read-only dump, or type SKIP: ").strip().upper() == "SKIP":
+        say("No dump taken. The steps are applied. Later, on MOVIE: run dump_info.")
+        return
     cmd = [sys.executable, "-I", "-B", str(RUNNER), "dump", "--go", "--firmware-shown", FIRMWARE]
     clear = last_result_sha()
     if clear:
@@ -259,9 +285,9 @@ def movie_session(test=None):
         return
     decoded = f.get("decoded") or {}
     column = (decoded.get("sensor_registers") or {}).get("closest_column")
-    if column != fx2_run.FULL_HEIGHT_COLUMN:         # the open-gate 4K 24p mode reads the sensor with register column 5 (as on the A7 IV)
-        say("NOTE: before this session the sensor was not in the full-height 4K 24p mode (register column %s, not %d)." % (column, fx2_run.FULL_HEIGHT_COLUMN))
-        say("      Was the camera on MOVIE, at 4K 24p? If not: set it, replug, and run dump_info once more.")
+    if column != fx2_run.FULL_HEIGHT_COLUMN:         # the open-gate 4K mode reads the sensor with register column 5 (as on the A7 IV), NTSC and PAL
+        say("NOTE: the dump did not find the sensor in its full-height 4K mode (register column %s, not %d): the camera was probably still on" % (column, fx2_run.FULL_HEIGHT_COLUMN))
+        say("      STILL, or not at 4K %s. The steps are applied all the same. Set MOVIE (%s), replug, and run dump_info." % (RATE[family], FORMATS[family].split(" (")[0]))
     panel = (decoded.get("display") or {}).get("panel_types")
     if panel:
         say("The rear panel reports type %d (%s). Please send this folder: it settles the FX2's panel shape." % (panel["rear_0x19d98cc"], panel["rear_aspect"]))
@@ -299,7 +325,7 @@ def main():
     elif a.pal and a.what in NO_PAL:
         raise SystemExit("%s has no PAL build (its band design is for mode 0x8c0, NTSC only). Nothing was sent." % a.what)
     global MOVIE
-    MOVIE = MOVIE.replace("24p", RATE[family].split(" ")[0])
+    MOVIE = MOVIE_BY[family]
     if a.no_screen and a.what not in ("apply", "putback"):
         raise SystemExit("--no-screen goes with apply or putback. Nothing was sent.")
     if a.no_meta and a.what != "apply":
@@ -341,21 +367,21 @@ def main():
         say("  %s" % FOURTH[a.what])
         say("  Why: with the output size 3840x2560 the FX2 hands its second scaler a first-scaler size of 4336x2560, and the earlier sensor step (L5)")
         say("  delivers 4336x2438: that was the crash of L13 + L5 + L16. %s" % ("H5 delivers 4336x2560." if "H5" in steps else "F16 keeps the size the records give."))
-        say("  NOT YET RUN ON AN FX2. A restart is possible and harmless (the patch is gone after it). Each step writes nothing unless its bytes are")
-        say("  exactly the stock bytes.")
-        say("  Camera settings for this test: SteadyShot Off (Active works with og2560 on an NTSC FX2, but keep it Off for a first run), APS-C/Super 35 Off,")
-        say("  S&Q off, Proxy off, File Format XAVC HS 4K or XAVC S 4K, %s." % RATE[family])
+        say("  %s A restart is possible and harmless (the patch is gone after it). Each step writes nothing unless its" % STATUS[a.what])
+        say("  bytes are exactly the stock bytes.")
+        say("  Camera settings: APS-C/Super 35 Off, S&Q off, File Format %s, %s. SteadyShot Off, Active and Dynamic Active" % (FORMATS[family], RATE[family]))
+        say("  and Proxy Recording all work with og2560 (issue 5); for a first run keep SteadyShot and Proxy off.")
         if a.what == "test6":
             say("  TEST 6 IS A DIAGNOSTIC STEP ONLY: look at the screen, but do NOT press REC. The encoder is still set for 2,160 rows; on an FX2 a recording")
             say("  in this state froze the camera until the battery was pulled (GitHub issue 5). For clips, use og2560.")
         if family == "PAL":
-            say("  PAL: the sensor-side step is %s, made for mode 0x880 (25p). NOT YET RUN ON A CAMERA: emulated against a PAL FX2's own records." % next(k for k in steps if k[0] in "QP"))
+            say("  PAL: the sensor-side step is %s, made for mode 0x880 (25p); it works on an FX2 set to PAL (issue 5)." % next(k for k in steps if k[0] in "QP"))
     elif a.what in TESTS:
         say("This is %s of the diagnostic ladder. On the first FX2 test the whole apply worked, but MOVIE ended in a forced" % a.what)
         say("  exception and a restart. This test applies only %s, so that the result says which part the FX2 does not take." % " + ".join(steps))
         say("  A restart is possible and harmless (the patch is gone after it). Each step writes nothing unless its bytes are exactly the stock bytes.")
         if a.what == "squeeze":
-            say("  (squeeze works on NTSC FX2s%s.)" % ("; PAL uses Q5, NOT YET RUN on a camera" if family == "PAL" else ""))
+            say("  (squeeze works on FX2s, NTSC with L5 and PAL with Q5, GitHub issues 1 and 5.)")
     elif applying:
         say("On the FX2 this state CRASHES on MOVIE entry (2026-11-25 and 2026-11-26: a forced exception and a restart to stock). The first failing")
         say("  step is L16 after L5. Use open_gate_squeezed (works) or the fourth kit's open_gate_3840x2560_test instead.")
@@ -371,6 +397,8 @@ def main():
         say("(If the open-gate state is already applied in this power-on, its steps will say NOTHING TO DO: that is fine.)")
     else:
         say("Before you go on: a charged battery, and the switch on %s." % STILL)
+    if sys.platform == "darwin":
+        say("On a Mac: quit Lightroom, Photos and Image Capture first. They take hold of the camera's card (Lightroom froze an FX2 on 'Accessing').")
     if input("Firmware version in the camera's menu: ").strip() != FIRMWARE:
         raise SystemExit("Not %s. Nothing was sent." % FIRMWARE)
     if input("Type YES to write to the camera's memory: ").strip() != "YES":
@@ -416,7 +444,7 @@ def main():
         if a.no_movie_session:
             say(">>> Unplug USB, set %s, then run dump_info on MOVIE (after a restart too)." % MOVIE)
         else:
-            movie_session(a.what)
+            movie_session(a.what, family)
         say()
         say("Please send the newest folders in camera_private, and what the screen did on MOVIE: a picture (which shape?), purple flashing,")
         say("  a restart? If it recorded: the clip's properties (size, frame rate), or the clip. To return to stock: battery out for 10 seconds.")
@@ -424,15 +452,17 @@ def main():
             say("  For a clip of this test: the size MediaInfo shows (3840x2560 expected), whether it plays on a computer, and whether a recording")
             say("  stops by itself.%s" % (" PAL: the frame rate MediaInfo shows (25 expected)." if family == "PAL" else ""))
         say("  Do not use the power switch to undo it: it keeps the encoder step (L19) and leaves a mixed state. Battery out, or the putback.")
+        say("  Do not change the frame rate or the file format while it is applied: the camera restarts by itself and is stock again (harmless).")
         say("  Before the next test: battery out for 10 seconds, switch on with the switch on STILL.")
         return
     if closing:
         if a.no_movie_session:
             say(">>> Unplug USB, then set %s." % MOVIE)
         else:
-            movie_session()
+            movie_session(family=family)
         say()
-        say("Use only XAVC HS 4K or XAVC S 4K at %s while it is applied: other 4K formats and frame rates are not set up and fail." % RATE[family])
+        say("Use only %s at %s while it is applied: other 4K formats and frame rates are not set up and fail." % (FORMATS[family], RATE[family]))
+        say("Changing the frame rate while it is applied restarts the camera, back to stock (GitHub issue 5): harmless, but the patch is gone.")
         say("If the camera stops or restarts: do NOT pull the battery yet. Set the switch to STILL, replug USB and run dump_info, then send camera_private.")
         say("To return to stock: battery out for 10 seconds. Do not use the power switch for that: it leaves the encoder step applied.")
 
