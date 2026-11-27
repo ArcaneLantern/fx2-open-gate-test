@@ -45,6 +45,18 @@ PLANS = {
     "og2560a": ("check", "L13", "H5", "L16", "L19", "S16", "A16"),
     "og57a": ("check", "L13", "K5", "K16", "K19", "S16", "A16"),
 }
+# The start-up loader (helper_fx2/sdboot, SDBOOT.md; 2026-11-28). Its files go to the camera's RAM disk piece by piece (F.LOADER_STAGE), then:
+#   loader_try_*      RAM ONLY: the helper is started once, now, from the RAM copy, as a process outside the camera application. Nothing is
+#                     installed. loader_try_check only READS (the test to run first); the others apply that plan as the kit's steps do.
+#   loader_install_*  FLASH: the files are copied to /etc/fx2boot and /etc/ld.so.preload is written. Needs --writes-flash.
+#   loader_status     read-only; loader_uninstall, loader_off, loader_on: FLASH (they need --writes-flash too).
+# The read-only check runs first in the plans that bring files or install; status, off, on and uninstall need no check: the way back must
+# not depend on the camera's state.
+_STAGE = ("check",) + tuple(F.LOADER_STAGE)
+PLANS.update({"loader_try_%s" % plan: _STAGE + (step, "W30") for plan, step in F.LOADER_PLANS.items()})
+PLANS.update({"loader_install_%s" % plan: _STAGE + (step, "W40") for plan, step in F.LOADER_PLANS.items() if plan != "check"})
+PLANS.update({"loader_status": ("W42",), "loader_uninstall": ("W41",), "loader_off": ("W58",), "loader_on": ("W59",)})
+NO_CHECK_PLANS = ("loader_status", "loader_uninstall", "loader_off", "loader_on")
 
 
 def what(step):
@@ -190,8 +202,10 @@ def main():
     ap.add_argument("--dry-run", action="store_true", help="checks and the simulated run only; nothing is sent")
     ap.add_argument("--go", action="store_true")
     ap.add_argument("--firmware-shown")
+    ap.add_argument("--writes-flash", action="store_true", help="needed for a plan with a start-up loader step that can write the camera's flash")
     a = ap.parse_args()
     plan = PLANS[a.plan]
+    flash = [s for s in plan if s in F.LOADER_FLASH]
     libs = {}
     for step in plan:
         if step not in F.WRITE_STEPS and step != "check":
@@ -203,13 +217,17 @@ def main():
         print("  %d. %s  %s  (library %s...)" % (n, step, what(step), F.PINS[step][1][:16]))
     print("Offline: every library pinned, the kit's refusals and self-test passed for each, and the whole batch ran on the simulated camera "
           "(%d packets: %d writes, %d deletes)." % (len(sent), sent.count("SET_FILE2"), sent.count("FILE_DELETE2")))
+    if flash:
+        print("THIS PLAN CAN WRITE THE CAMERA'S FLASH (steps %s). A battery change does not undo that; the plan loader_uninstall does." % " ".join(flash))
     if a.dry_run:
         print("Dry run only: nothing was sent to any device.")
         return
+    if flash and not a.writes_flash:
+        raise SystemExit("This plan can write the camera's flash: it needs --writes-flash as well. Nothing was sent.")
     if not a.go or a.firmware_shown != F.FIRMWARE:
         raise SystemExit("A live run needs --go and --firmware-shown %s. Nothing was sent." % F.FIRMWARE)
     import fx2_apply as A
-    if plan[0] != "check":                             # without the in-connection check, the kit's rule: a saved READY check first
+    if plan[0] != "check" and a.plan not in NO_CHECK_PLANS:   # without the in-connection check, the kit's rule: a saved READY check first
         chk = A.last_check()
         if chk is None or not chk[1]:
             raise SystemExit("The newest saved read-only check of this kit %s. Run check_readonly first and get VERDICT READY. Nothing was sent."
@@ -234,7 +252,13 @@ def main():
             c.print_pnp(session, "after the stop request")
             done = [s for s in plan if s in F.WRITE_STEPS and (((session.results.get("steps") or {}).get(s) or {}).get("result") or {}).get("s3", {}).get("ok")]
             print("Steps done in this connection: %s." % (" ".join(done) or "none"))
-            print("This WROTE to the camera's memory. A cold boot (battery out for 10 seconds) undoes everything written. Keep the camera on.")
+            if a.plan.startswith("loader_"):
+                print("RAM: what these steps put on the camera's RAM disk is gone after a battery change (10 seconds)." if not flash else
+                      "FLASH: what the steps %s wrote stays through a battery change. The plan loader_uninstall removes it." % " ".join(flash))
+                if "W30" in plan:
+                    print("The helper now works on its own inside the camera for a few seconds. Read what it did: the plan loader_status.")
+            else:
+                print("This WROTE to the camera's memory. A cold boot (battery out for 10 seconds) undoes everything written. Keep the camera on.")
 
 
 if __name__ == "__main__":
