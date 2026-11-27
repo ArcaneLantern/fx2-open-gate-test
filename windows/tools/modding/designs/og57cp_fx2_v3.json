@@ -1,0 +1,135 @@
+{
+ "design": "og57cp_fx2_v3",
+ "build": "fx2_101",
+ "camera": "ILME-FX2 (FX2), firmware 1.01",
+ "title": "Output size 5760x3840, four scaler units, a buffer id for the output picture on units of 30.8 MB, and that id in the size table, in the coprocessor's RAM (FX2 1.01 port)",
+ "kind": "ram_words",
+ "artifact": "cpapp-b.bin, RAM only: these bytes are not in the file",
+ "emulated_image_sha256": "eba723db657117a36d9593dacf640840aca893c0d6ee5d728de9d1996b8c5e29",
+ "generated_by": "build/build_ram_words_fx2.py og57cp",
+ "ported_from": {
+  "design": "og57cp_c2_v3",
+  "build": "a7c2_201",
+  "a7iv": "og57cp_v3 (works on the A7 IV: F906, the real 5760x3840 file)"
+ },
+ "status": "addresses from the FX2's own code and its emulated tables; the setting's neighbours read on FX2 cameras; never written on an FX2",
+ "table": "unit-count setting 0x18f62e8 (split rule 0x509e5a), the memory manager's id rows 0x24b94a0, the movie size table 0x18f60b0",
+ "summary": {
+  "sites": 5,
+  "bytes": 20,
+  "output_size": [
+   5760,
+   3840
+  ],
+  "picture_bytes_at_format_code_2": 27648000,
+  "output_unit_bytes": 30824400,
+  "output_units_in_the_allocator": 6,
+  "memory_id": "0x43f, made from the row of id 0x446, with the key list of id 0x498 (key 0x5f2: three units to a 106.9 MB block of key 0x39, from the two blocks the main output's 0x2d9 units used in stock); the size table's entry names it",
+  "scaler_units": 4,
+  "replaces": "og57cp_v2, whose units (key 0x6a3) take a 134 MB block of key 0x2f that the recording needs for id 0x60c (F707, F708; evidence/hardware/dmm_server_id_0x43f_keys_compared.json)",
+  "goes_with": [
+   "dmmwb4688_fx2_v1",
+   "og57n_fx2_v1 (PAL: og57n880_fx2_v1)",
+   "ogfile57r300m1_fx2_v4"
+  ]
+ },
+ "sites": [
+  {
+   "ram_address": "0x18f62e8",
+   "old": "00000000",
+   "new": "03000000",
+   "note": "the unit-count setting the split rule 0x430d5c reads: 0 (by size class: two units for 4K) to 3 (four units) [A7C II 0x1a533b4, A7 IV 0x143c9b8]"
+  },
+  {
+   "ram_address": "0x24b9c2c",
+   "old": "28bc4b02",
+   "new": "00bd4b02",
+   "note": "id table row 241 (id 0x446, which cannot be opened: no layout has a unit of its key 0x587): key-list pointer to the list of id 0x498, one key, 0x5f2 (units of 30,824,400 bytes) [A7C II 0x25b8674, A7 IV 0x1faeb0c]"
+  },
+  {
+   "ram_address": "0x24b9c28",
+   "old": "46040000",
+   "new": "3f040000",
+   "note": "the same row: id 0x446 to 0x43f, the id the firmware asks for an output plane above 13,271,040 bytes [A7C II 0x25b8670, A7 IV 0x1faeb08]"
+  },
+  {
+   "ram_address": "0x18f60fc",
+   "old": "d9020000",
+   "new": "3f040000",
+   "note": "size class 3, second entry: the output buffer's memory id, 0x2d9 (units of 13,271,040 bytes) to 0x43f; the sequence takes its output buffer id from here (0x4311f0) [A7C II 0x1a531cc, A7 IV 0x143c7c0]"
+  },
+  {
+   "ram_address": "0x18f60f8",
+   "old": "000f7008",
+   "new": "8016000f",
+   "note": "size class 3, second entry: output width and height [A7C II 0x1a531c8, A7 IV 0x143c7bc]"
+  }
+ ],
+ "guards": [
+  {
+   "ram_address": "0x18f62e0",
+   "bytes": "0000000000000000",
+   "note": "the eight bytes before the setting: zero on the camera [A7C II 0x1a533ac]"
+  },
+  {
+   "ram_address": "0x18f62ec",
+   "bytes": "00000000",
+   "note": "the four bytes after the setting's word: zero on the camera [A7C II 0x1a533b8]"
+  },
+  {
+   "ram_address": "0x24b9c20",
+   "bytes": "4504000020bc4b02",
+   "note": "the row before: id 0x445 and its key list [A7C II 0x25b8668]"
+  },
+  {
+   "ram_address": "0x24b9d00",
+   "bytes": "9804000000bd4b02",
+   "note": "the row of id 0x498: its key list is where the new pointer points [A7C II 0x25b8748]"
+  },
+  {
+   "ram_address": "0x24bbd00",
+   "bytes": "f2050000ffffffff",
+   "note": "that key list: key 0x5f2, end [A7C II 0x25ba748]"
+  },
+  {
+   "ram_address": "0x18f60f0",
+   "bytes": "000f70083e040000",
+   "note": "the entry before: 3840, 2160, memory id 0x43e [A7C II 0x1a531c0]"
+  }
+ ],
+ "checked_in_the_firmware_allocator": {
+  "tool": "build/emu_dmm_server.py --build fx2_101",
+  "open_0x43f": [
+   {
+    "address": "0x821c00000",
+    "size": 30824400
+   }
+  ],
+  "then_open": {
+   "0x43e": [
+    27864320
+   ],
+   "0x2d9": [
+    13271040
+   ],
+   "0x4b8": [
+    13271040
+   ],
+   "0x60c": [
+    125829120
+   ]
+  }
+ },
+ "checked_against": [
+  "the FX2 split rule 0x509e5a: the A7C II's 0x4c0e1c.. bytes, table {1, 2, 4}",
+  "23 FX2 dumps: 0x18f62e0..0x18f62f0 zero",
+  "build/emu_size_table.py fx2_101",
+  "build/emu_dmm_server.py --build fx2_101 (id rows, key lists)"
+ ],
+ "precondition": "write it with the switch on STILL, before the first MOVIE entry; instead of outsz2560_fx2_v1 (the same size word)",
+ "restore": "write the old words back (in the reverse order), or cold boot",
+ "not_shown": [
+  "anything on an FX2",
+  "the FX2's output chooser 0x51cb38 for its other outputs at this size (they keep the stock sizes)"
+ ]
+}

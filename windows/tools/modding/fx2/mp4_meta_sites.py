@@ -66,17 +66,51 @@ SHIFTED = {"a7c2_201": -0x390C}
 # A1 II 4.00 (2026-11-26, modding/A1M2_PORT_ENCODER.md): the A7 IV's writer moved by +0x15c4 (track config 0x2240dc, stsd entry 0x225690, PROF entry
 # 0x22737c); all seven size sites found by 68 bytes of context, unique, the same instruction. Checked by build/emu_mp4_meta.py --build a1m2_400.
 SHIFTED["a1m2_400"] = 0x15C4
+# FX2 1.01 (2026-11-27, the FX2's 5.7K port, GitHub issue 7): the A7 IV's writer moved by -0x37b4 (modding/FX2_PORT_ENCODER.md). All nine size sites
+# (both sizes) found by 32 bytes of the A7 IV's context, unique, at A7 IV - 0x37b4, the same instructions. SHIFTED is looked up before OTHER_BUILDS,
+# so the FX2's 3840x2560 heights come from here now: the same two sites, bytes and notes as its OTHER_BUILDS entry (ogfile2560_hs_s_fx2_v1/_v2
+# rebuild byte for byte). Checked by build/emu_mp4_meta.py --build fx2_101 --both.
+SHIFTED["fx2_101"] = -0x37B4
+
+
+# A6700 2.00 (2026-11-26, modding/A6700_PORT_ENCODER.md): the same writer source in another compile (libmpr.so 3,180,832 bytes). Track config
+# 0x1ec14c (height in w5, width in w6; the same request and config layout), stsd entry set-up 0x1ed6e0, PROF video entry 0x1efa30, its profile id
+# 0x1ef3d4 (three width loads, all `ldrh w0`) and pixel aspect 0x1ef9b4. Both sizes; the sites are those of the contributed A6700 kit
+# (work/contrib/a6700_v1.0, build_a6700_designs.a6700_mp4_meta_sites), found again here by disassembly. Checked by emu_mp4_meta.py --build a6700_200.
+A6700 = {"size": {"avc_h": (0x1EC1B8, 5, ("mov", "w5, #0x870"), "MP4 track height, XAVC S 4K and XAVC S-I 4K (AVC, combs 0, 2, 9)"),
+                  "avc_w": (0x1EC1BC, 6, ("mov", "w6, #0xf00"), "MP4 track width, XAVC S 4K and XAVC S-I 4K (AVC, combs 0, 2, 9)"),
+                  "hevc_h": (0x1EC2E8, 5, ("mov", "w5, #0x870"), "MP4 track height, XAVC HS 4K (HEVC, combs 5, 7)"),
+                  "hevc_w": (0x1EC2EC, 6, ("mov", "w6, #0xf00"), "MP4 track width, XAVC HS 4K (HEVC, combs 5, 7)")},
+         "width": [(0x1ED78C, 1, ("mov", "w1, #0x1e00"), "stsd entry set-up 0x1ed6e0: its 7680 compare -> 5760, so a 5760-wide entry is built (else it returns 2)"),
+                   (0x1EFA00, 0, ("mov", "w0, #0x1e00"), "PROF pixel aspect 0x1ef9b4: its 7680 compare -> 5760 (1:1), else it returns 3")],
+         "profile": [(0x1EF400, 0, ("ldrh", "w0, [x1, #0x2a]"), "PROF profile id 0x1ef3d4, AVC: width read -> the constant 3840 (the UHD ids)"),
+                     (0x1EF828, 0, ("ldrh", "w0, [x1, #0x2a]"), "PROF profile id 0x1ef3d4, HEVC chroma code 2: width read -> the constant 3840"),
+                     (0x1EF874, 0, ("ldrh", "w0, [x1, #0x2a]"), "PROF profile id 0x1ef3d4, HEVC chroma code 1: width read -> the constant 3840")]}
+
+
+def sites_a6700(width, height):
+    assert (width, height) in ((3840, 2560), (5760, 3840)), "the open-gate files of the A6700 kit"
+    s = A6700["size"]
+    out = [(s[k][0], MOVZ_W(s[k][1], height), s[k][2], s[k][3] + f": 2160 -> {height}") for k in ("avc_h", "hevc_h")]
+    if width != 3840:
+        out += [(s[k][0], MOVZ_W(s[k][1], width), s[k][2], s[k][3] + f": 3840 -> {width}") for k in ("avc_w", "hevc_w")]
+        out += [(a, MOVZ_W(rd, width), d, why) for a, rd, d, why in A6700["width"]]
+        out += [(a, MOVZ_W(rd, 3840), d, why) for a, rd, d, why in A6700["profile"]]
+    return sorted(out)
 
 
 def sites(width, height, build="a7iv_602"):
     """[(address, new 4 bytes, expected (mnemonic, operands) of the stock instruction, note)] for a file of width x height."""
+    if build == "a6700_200":
+        return sites_a6700(width, height)
     if build in SHIFTED:
         return [(a + SHIFTED[build], new, want, why) for a, new, want, why in sites(width, height)]
     if build != "a7iv_602":
         assert (width, height) == (3840, 2560), "the open-gate file of the %s kit" % build
         s = OTHER_BUILDS[build]
         return sorted((s[k][0], MOVZ_W(6, height), s[k][1], s[k][2] + f": 2160 -> {height}") for k in ("avc_h", "hevc_h"))
-    assert (width, height) in ((3840, 2560), (5760, 3840)), "the open-gate files of this project"
+    # 4672x3120: the native Super 35 file (build/build_og_s35.py, 2026-11-26); the same sites as 5760x3840 with other immediates (not run in emu_mp4_meta.py)
+    assert (width, height) in ((3840, 2560), (5760, 3840), (4672, 3120)), "the open-gate files of this project"
     out = [(SIZE_SITES[k][0], MOVZ_W(6, height), SIZE_SITES[k][1], SIZE_SITES[k][2] + f": 2160 -> {height}") for k in ("avc_h", "hevc_h")]
     if width != 3840:
         out += [(SIZE_SITES[k][0], MOVZ_W(7, width), SIZE_SITES[k][1], SIZE_SITES[k][2] + f": 3840 -> {width}") for k in ("avc_w", "hevc_w")]

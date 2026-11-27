@@ -44,8 +44,17 @@ D = ROOT / "modding" / "designs"
 MODE = 3
 
 
+# 2026-11-27: run_ogfile_emu.AvCam takes a body's function addresses as its `fn` argument (since 2026-11-25; before that it read the module
+# globals set above, which it no longer does): the same addresses, given here
+FX2_FN = {"DESC": AVB + DESC, "MATCH": E.MATCH, "CLIPFN": E.CLIPFN, "UNITFN": E.UNITFN, "BUILDER": E.BUILDER, "DMM_OPEN": E.DMM_OPEN,
+          "LOGF": E.LOGF, "LOGH": E.LOGH, "MEMSET": E.MEMSET, "MEMCPY": E.MEMCPY}
+
+
 class Cam(E.AvCam):
     mode = MODE
+
+    def __init__(self, img, fn=None):
+        super().__init__(img, dict(FX2_FN, **(fn or {})))
 
     def request(self, d, w, h):
         req = super().request(d, w, h)

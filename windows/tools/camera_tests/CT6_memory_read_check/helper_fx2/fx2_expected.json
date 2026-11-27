@@ -1,5 +1,5 @@
 {
- "label": "fx2read_v4",
+ "label": "fx2read_v5",
  "cp_lo": 786432,
  "cp_hi": 162529280,
  "avcam_phys": 17196646400,
@@ -20,241 +20,365 @@
    "name": "S4",
    "address": "0xe40752",
    "length": 2,
-   "soft": 0
+   "soft": 0,
+   "check_only": false
   },
   {
    "name": "S2",
    "address": "0xe945fe",
    "length": 2,
-   "soft": 0
+   "soft": 0,
+   "check_only": false
   },
   {
    "name": "S5",
    "address": "0xf990b6",
    "length": 2,
-   "soft": 0
+   "soft": 0,
+   "check_only": false
   },
   {
    "name": "S1",
    "address": "0xf990ba",
    "length": 2,
-   "soft": 0
+   "soft": 0,
+   "check_only": false
   },
   {
    "name": "S6",
    "address": "0xf990be",
    "length": 2,
-   "soft": 0
+   "soft": 0,
+   "check_only": false
   },
   {
    "name": "S10",
    "address": "0xf9957a",
    "length": 2,
-   "soft": 0
+   "soft": 0,
+   "check_only": false
   },
   {
    "name": "S7",
    "address": "0xf99938",
    "length": 2,
-   "soft": 0
+   "soft": 0,
+   "check_only": false
   },
   {
    "name": "S8",
    "address": "0xf9993c",
    "length": 2,
-   "soft": 0
+   "soft": 0,
+   "check_only": false
   },
   {
    "name": "S9",
    "address": "0xf99b34",
    "length": 2,
-   "soft": 0
+   "soft": 0,
+   "check_only": false
   },
   {
    "name": "S3",
    "address": "0xf99b3c",
    "length": 2,
-   "soft": 0
+   "soft": 0,
+   "check_only": false
   },
   {
    "name": "S0",
    "address": "0x11eb1b8",
    "length": 4,
-   "soft": 0
+   "soft": 0,
+   "check_only": false
   },
   {
    "name": "record_left",
    "address": "0xdf9958",
    "length": 3000,
-   "soft": 0
+   "soft": 0,
+   "check_only": false
   },
   {
    "name": "record_right",
    "address": "0xdfa510",
    "length": 3000,
-   "soft": 0
+   "soft": 0,
+   "check_only": false
   },
   {
    "name": "stored_record",
    "address": "0x24de78c",
    "length": 368,
-   "soft": 1
+   "soft": 1,
+   "check_only": false
+  },
+  {
+   "name": "pal_S4",
+   "address": "0xe40746",
+   "length": 2,
+   "soft": 0,
+   "check_only": true
+  },
+  {
+   "name": "pal_S2",
+   "address": "0xe945ea",
+   "length": 2,
+   "soft": 0,
+   "check_only": true
+  },
+  {
+   "name": "pal_S5",
+   "address": "0xf99090",
+   "length": 2,
+   "soft": 0,
+   "check_only": true
+  },
+  {
+   "name": "pal_S1",
+   "address": "0xf99094",
+   "length": 2,
+   "soft": 0,
+   "check_only": true
+  },
+  {
+   "name": "pal_S6",
+   "address": "0xf99098",
+   "length": 2,
+   "soft": 0,
+   "check_only": true
+  },
+  {
+   "name": "pal_S10",
+   "address": "0xf99554",
+   "length": 2,
+   "soft": 0,
+   "check_only": true
+  },
+  {
+   "name": "pal_S7",
+   "address": "0xf9992a",
+   "length": 2,
+   "soft": 0,
+   "check_only": true
+  },
+  {
+   "name": "pal_S8",
+   "address": "0xf9992e",
+   "length": 2,
+   "soft": 0,
+   "check_only": true
+  },
+  {
+   "name": "pal_S9",
+   "address": "0xf99b20",
+   "length": 2,
+   "soft": 0,
+   "check_only": true
+  },
+  {
+   "name": "pal_S3",
+   "address": "0xf99b28",
+   "length": 2,
+   "soft": 0,
+   "check_only": true
+  },
+  {
+   "name": "pal_S0",
+   "address": "0x11eb1b4",
+   "length": 4,
+   "soft": 0,
+   "check_only": true
+  },
+  {
+   "name": "pal_stored_record",
+   "address": "0x24de61c",
+   "length": 368,
+   "soft": 1,
+   "check_only": true
   },
   {
    "name": "outsize",
    "address": "0x18f60f8",
    "length": 4,
-   "soft": 1
+   "soft": 1,
+   "check_only": false
   },
   {
    "name": "outsize_guard0",
    "address": "0x18f60f0",
    "length": 8,
-   "soft": 1
+   "soft": 1,
+   "check_only": false
   },
   {
    "name": "outsize_guard1",
    "address": "0x18f60fc",
    "length": 4,
-   "soft": 1
+   "soft": 1,
+   "check_only": false
   },
   {
    "name": "screen0",
    "address": "0x1f9eec",
    "length": 4,
-   "soft": 1
+   "soft": 1,
+   "check_only": false
   },
   {
    "name": "screen1",
    "address": "0x1fa0e8",
    "length": 4,
-   "soft": 1
+   "soft": 1,
+   "check_only": false
   },
   {
    "name": "screen2",
    "address": "0x1fa0ec",
    "length": 4,
-   "soft": 1
+   "soft": 1,
+   "check_only": false
   },
   {
    "name": "screen3",
    "address": "0x1fa120",
    "length": 4,
-   "soft": 1
+   "soft": 1,
+   "check_only": false
   },
   {
    "name": "screen4",
    "address": "0x1fa124",
    "length": 4,
-   "soft": 1
+   "soft": 1,
+   "check_only": false
   },
   {
    "name": "screen5",
    "address": "0x1fa154",
    "length": 4,
-   "soft": 1
+   "soft": 1,
+   "check_only": false
   },
   {
    "name": "screen6",
    "address": "0x1fa164",
    "length": 4,
-   "soft": 1
+   "soft": 1,
+   "check_only": false
   },
   {
    "name": "screen7",
    "address": "0x1fa168",
    "length": 4,
-   "soft": 1
+   "soft": 1,
+   "check_only": false
   },
   {
    "name": "screen8",
    "address": "0x721554",
    "length": 4,
-   "soft": 1
+   "soft": 1,
+   "check_only": false
   },
   {
    "name": "screen9",
    "address": "0x721568",
    "length": 4,
-   "soft": 1
+   "soft": 1,
+   "check_only": false
   },
   {
    "name": "screen10",
    "address": "0x721e70",
    "length": 4,
-   "soft": 1
+   "soft": 1,
+   "check_only": false
   },
   {
    "name": "screen11",
    "address": "0x721eac",
    "length": 4,
-   "soft": 1
+   "soft": 1,
+   "check_only": false
   },
   {
    "name": "screen12",
    "address": "0xf79714",
    "length": 4,
-   "soft": 1
+   "soft": 1,
+   "check_only": false
   },
   {
    "name": "screen13",
    "address": "0xf79718",
    "length": 4,
-   "soft": 1
+   "soft": 1,
+   "check_only": false
   },
   {
    "name": "screen14",
    "address": "0xf7978c",
    "length": 4,
-   "soft": 1
+   "soft": 1,
+   "check_only": false
   },
   {
    "name": "screen15",
    "address": "0xf79790",
    "length": 4,
-   "soft": 1
+   "soft": 1,
+   "check_only": false
   },
   {
    "name": "screen16",
    "address": "0xf79804",
    "length": 4,
-   "soft": 1
+   "soft": 1,
+   "check_only": false
   },
   {
    "name": "screen17",
    "address": "0xf79808",
    "length": 4,
-   "soft": 1
+   "soft": 1,
+   "check_only": false
   },
   {
    "name": "fehold",
    "address": "0x51fef8",
    "length": 4,
-   "soft": 1
+   "soft": 1,
+   "check_only": false
   },
   {
    "name": "rawbuf_size0",
    "address": "0x24838c8",
    "length": 4,
-   "soft": 0
+   "soft": 0,
+   "check_only": false
   },
   {
    "name": "rawbuf_size1",
    "address": "0x24838dc",
    "length": 4,
-   "soft": 0
+   "soft": 0,
+   "check_only": false
   },
   {
    "name": "rawbuf_key2",
    "address": "0x2483860",
    "length": 4,
-   "soft": 0
+   "soft": 0,
+   "check_only": false
   },
   {
    "name": "rawbuf_key3",
    "address": "0x2483874",
    "length": 4,
-   "soft": 0
+   "soft": 0,
+   "check_only": false
   }
  ],
  "lm_sites": 6,
@@ -369,6 +493,8 @@
   "dmmwb4688_fx2_v1": "c85548d111b790ef88d412cf126d078fa5ed67bd2bd7c95ea9567f581d355b93",
   "fehold_fx2_v1": "1a38d997736242c7c86963ee8f6879f98192cd4c1843032883113d1e920bacc5",
   "fhband_fx2_v1": "563737e28d8ab73b716482d907ca8a7eba5b3c4efca46eb726064d46cb78b6f5",
-  "ogh2560_fx2_v1": "3e33ae06d2e02cdaed872ecccb5a53468be06077a822ac6c41aabf9a3966f207"
+  "ogh2560_fx2_v1": "3e33ae06d2e02cdaed872ecccb5a53468be06077a822ac6c41aabf9a3966f207",
+  "ogsq880_fx2_v1": "df61d6308478982dcab99fa464ddd142e4649b101c85121099bc0530c18d992b",
+  "ogh2560880_fx2_v1": "b2afed6243f970d146ca442709532ac190eb25a01208af66934ec4c16df4bc7c"
  }
 }

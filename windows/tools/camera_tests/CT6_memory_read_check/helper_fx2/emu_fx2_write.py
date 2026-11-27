@@ -322,6 +322,129 @@ def main():
         r, t = go(H5, mem, h_allowed, lose=lose)
         ok(not r.bad and "NOT DONE" in t and hstate(mem) == "stock" and changed_only(mem, before, {}), f"H5 with line write {lose} lost: every site put back")
 
+    # ---- Q5/Q6, P5/P6 (fifth kit, 2026-11-27, PAL): mode 0x880. The camera models here carry the stored records a real FX2 left in its
+    # dump pages (0x24dd000..0x24e1000): a PAL-set FX2 (GitHub issue 5, stock, STILL) and an NTSC one (first test, stock). On PAL the
+    # 0x8c0 record is the 24.00p one, so the 0x8c0 libraries must refuse there; on NTSC the 0x880 record is not the 50 Hz one, so the
+    # 0x880 libraries must refuse there.
+    EVID = ROOT / "evidence/fx2"
+    DUMPS = {"PAL": EVID / "tester_2026-11-26_pal/zip/camera_private/CT6_20261126T203351Z_fx2_dump",
+             "NTSC": EVID / "tester_2026-11-25/zip/camera_private/CT6_20261125T201948Z_fx2_dump"}
+
+    def allowed_of(dz):
+        out, i = {}, dz["mode_index"]
+        for p_ in dz["patches"]:
+            a = int(p_["addr"], 16)
+            for k, (o, n) in enumerate(zip(bytes.fromhex(p_["old"]), bytes.fromhex(p_["new"]))):
+                if o != n:
+                    out[a + k] = (o, n)
+        s_, n_ = bytes.fromhex(dz["stored_record"]["stock"]), bytes.fromhex(dz["stored_record"]["design"])
+        for k in range(REC):
+            if s_[k] != n_[k]:
+                out[RECS + i * REC + k] = (s_[k], n_[k])
+        return out
+
+    def state_of(mem, al):
+        vals = [(mem.read(a, 1)[0], pr) for a, pr in al.items()]
+        return "stock" if all(v == pr[0] for v, pr in vals) else "new" if all(v == pr[1] for v, pr in vals) else "mixed"
+
+    def camera_dump(family):
+        m = Mem(image)
+        m.write(IMAGER, struct.pack("<I", CTRL))
+        m.write(CTRL + CTRL_DRVPARAM, struct.pack("<I", OBJ))
+        m.write(OBJ, struct.pack("<6I", VTABLE, COUNT, IDS, 0, RECS, 0xE94530))
+        pages = sorted(DUMPS[family].glob("cp_records_*.bin"))
+        assert len(pages) == 4, family
+        for pg in pages:
+            m.write(int(pg.stem.split("_")[-1], 16), pg.read_bytes())
+        return m
+    dq, dp = design("ogsq880_fx2_v1"), design("ogh2560880_fx2_v1")
+    assert dq["mode_id"] == dp["mode_id"] == "0x880" and dq["mode_index"] == dp["mode_index"] == 9 and dq["stored_record"]["address"] == "0x24de61c"
+    assert dp["stored_record"]["design"] == dq["stored_record"]["design"]
+    q_allowed, p_allowed = allowed_of(dq), allowed_of(dp)
+    in_pair = lambda a: any(r <= a < r + 3000 for r in (0xDF9958, 0xDFA510))
+    cells = lambda al: {a for a in al if not in_pair(a) and not RECS <= a < RECS + COUNT * REC}
+    qp_diff = {a for a in set(q_allowed) | set(p_allowed) if q_allowed.get(a) != p_allowed.get(a)}
+    ok(qp_diff and all(in_pair(a) for a in qp_diff) and cells(q_allowed) == cells(p_allowed) and not cells(q_allowed) & cells(allowed_of(d))
+       and len(cells(q_allowed)) == len(cells(allowed_of(d))),
+       f"ogh2560880_fx2_v1 differs from ogsq880_fx2_v1 only inside the two records ({len(qp_diff)} bytes); the 0x880 cells are other bytes than L5's 0x8c0 cells")
+    Q5, Q6, P5, P6 = lib("Q5"), lib("Q6"), lib("P5"), lib("P6")
+    for family in ("PAL", "NTSC"):
+        mem = camera_dump(family)
+        ok(state_of(mem, q_allowed) == ("stock" if family == "PAL" else "mixed") and state_of(mem, allowed) == ("mixed" if family == "PAL" else "stock"),
+           f"the {family} FX2's records: mode 0x880 {'stock for' if family == 'PAL' else 'not'} the PAL designs, mode 0x8c0 {'not' if family == 'PAL' else 'stock for'} the NTSC designs")
+    for name_, L_, U_, al in (("Q5 (ogsq880_fx2_v1)", Q5, Q6, q_allowed), ("P5 (ogh2560880_fx2_v1)", P5, P6, p_allowed)):
+        mem = camera_dump("PAL")
+        before = mem.snapshot()
+        r, t = go(L_, mem, al)
+        ok(not r.bad and "DONE: all 14 sites hold the target bytes (apply)" in t and state_of(mem, al) == "new" and changed_only(mem, before, al),
+           f"{name_} on the PAL FX2's records: 13 sites and the stored record of mode 0x880 new, nothing else changed ({r.n_writes} line writes)")
+        r, t = go(L_, mem, al)
+        ok(not r.bad and "NOTHING TO DO" in t and r.n_writes == 0, f"{name_[:2]} again: nothing to do, no write")
+        r, t = go(U_, mem, al)
+        ok(not r.bad and "(put back)" in t and "DONE" in t and state_of(mem, al) == "stock" and changed_only(mem, before, {}),
+           f"{name_[:1]}6: the PAL FX2's records and cells as they were, byte for byte")
+        for lose in (1, 14):
+            mem = camera_dump("PAL")
+            before = mem.snapshot()
+            r, t = go(L_, mem, al, lose=lose)
+            ok(not r.bad and "NOT DONE" in t and state_of(mem, al) == "stock" and changed_only(mem, before, {}), f"{name_[:2]} with line write {lose} lost: every site put back")
+        mem = camera_dump("NTSC")
+        before = mem.snapshot()
+        r, t = go(L_, mem, al)
+        ok(not r.bad and r.n_writes == 0 and "nothing is written" in t and changed_only(mem, before, {}),
+           f"{name_[:2]} on the NTSC FX2's records (mode 0x880 not the 50 Hz record): refused, nothing written")
+    for name_, L_, al in (("L5", L5, allowed), ("H5", H5, h_allowed)):
+        mem = camera_dump("PAL")
+        before = mem.snapshot()
+        r, t = go(L_, mem, al)
+        ok(not r.bad and r.n_writes == 0 and "nothing is written" in t and changed_only(mem, before, {}),
+           f"{name_} on the PAL FX2's records (mode 0x8c0 is the 24.00p record there): refused, nothing written")
+    mem = camera_dump("NTSC")
+    r, t = go(L5, mem, allowed)
+    ok(not r.bad and "DONE" in t and state_of(mem, allowed) == "new", "L5 on the NTSC FX2's records: DONE (the real NTSC records are the stock the design expects)")
+    r, t = go(Q5, mem, q_allowed)
+    ok(not r.bad and r.n_writes == 0 and "nothing is written" in t, "Q5 on the NTSC FX2 holding L5's state: refused, nothing written")
+    for first, second, al1, al2, label in ((Q5, P5, q_allowed, p_allowed, "P5 on a camera holding Q5's state"),
+                                           (P5, Q5, p_allowed, q_allowed, "Q5 on a camera holding P5's state"),
+                                           (P5, Q6, p_allowed, q_allowed, "Q6 on a camera holding P5's state")):
+        mem = camera_dump("PAL")
+        r, t = go(first, mem, al1)
+        snap = mem.snapshot()
+        r, t = go(second, mem, al2)
+        ok(not r.bad and r.n_writes == 0 and state_of(mem, al1) == "new" and changed_only(mem, snap, {}), f"{label}: nothing written (each design is put back by its own library)")
+
+    # ---- K5/K6, J5/J6 (2026-11-27, 5.7K): og57n_fx2_v1 (NTSC, mode 0x8c0) and og57n880_fx2_v1 (PAL, mode 0x880): the squeeze designs' cells
+    # and stored records with records whose first scaler gives 5760x3840; on the real NTSC / PAL record pages
+    dk, dj = design("og57n_fx2_v1"), design("og57n880_fx2_v1")
+    k_allowed, j_allowed = allowed_of(dk), allowed_of(dj)
+    K5, K6, J5, J6 = lib("K5"), lib("K6"), lib("J5"), lib("J6")
+    for name_, L_, U_, al, fam, other in (("K5 (og57n_fx2_v1)", K5, K6, k_allowed, "NTSC", "PAL"), ("J5 (og57n880_fx2_v1)", J5, J6, j_allowed, "PAL", "NTSC")):
+        mem = camera_dump(fam)
+        before = mem.snapshot()
+        r, t = go(L_, mem, al)
+        ok(not r.bad and "DONE: all 14 sites hold the target bytes (apply)" in t and state_of(mem, al) == "new" and changed_only(mem, before, al),
+           f"{name_} on the {fam} FX2's records: 13 sites and the stored record new, nothing else changed ({r.n_writes} line writes)")
+        r, t = go(L_, mem, al)
+        ok(not r.bad and "NOTHING TO DO" in t and r.n_writes == 0, f"{name_[:2]} again: nothing to do")
+        r, t = go(U_, mem, al)
+        ok(not r.bad and "(put back)" in t and "DONE" in t and state_of(mem, al) == "stock" and changed_only(mem, before, {}), f"{name_[:1]}6: byte for byte as before")
+        mem = camera_dump(fam)
+        before = mem.snapshot()
+        r, t = go(L_, mem, al, lose=14)
+        ok(not r.bad and "NOT DONE" in t and state_of(mem, al) == "stock" and changed_only(mem, before, {}), f"{name_[:2]} with line write 14 lost: every site put back")
+        mem = camera_dump(other)
+        before = mem.snapshot()
+        r, t = go(L_, mem, al)
+        ok(not r.bad and r.n_writes == 0 and "nothing is written" in t and changed_only(mem, before, {}), f"{name_[:2]} on the {other} FX2's records: refused, nothing written")
+    for first, al1, second, al2, label in ((L5, allowed, K5, k_allowed, "K5 on a camera holding L5's state"), (H5, h_allowed, K5, k_allowed, "K5 on a camera holding H5's state"),
+                                           (K5, k_allowed, H5, h_allowed, "H5 on a camera holding K5's state"), (Q5, q_allowed, J5, j_allowed, "J5 on a camera holding Q5's state"),
+                                           (J5, j_allowed, P5, p_allowed, "P5 on a camera holding J5's state")):
+        mem = camera_dump("PAL" if label.startswith(("J5", "P5")) else "NTSC")
+        r, t = go(first, mem, al1)
+        snap = mem.snapshot()
+        r, t = go(second, mem, al2)
+        ok(not r.bad and r.n_writes == 0 and changed_only(mem, snap, {}), f"{label}: nothing written")
+
     # ---- L13 / L14: the memory manager
     dd = design("dmmwb4688_fx2_v1")
     E.DESIGN = "dmmwb4688_fx2_v1"
@@ -373,12 +496,24 @@ def main():
     # ---- L16 / L17 (output size) and S16 / S17 (screen words)
     t_, srows, _ = emu_size_table.table("fx2_101")
 
+    # 5.7K (2026-11-27): the model also holds the memory manager's id rows and key lists as the FX2's own DMM set-up leaves them
+    # (build/emu_dmm_server.py --build fx2_101) and the unit-count setting's 16 bytes as every FX2 dump reads them (zero)
+    import emu_dmm_server as EDS
+    EDS.use_build("fx2_101")
+    cfg57 = parse_dmmcfg.Config(parse_dmmcfg.find_file("fx2_101"), "fx2_101")
+    srv57 = EDS.Server(cfg57.data, cfg57)
+    assert srv57.init() == 0 and not srv57.fatal
+    ID_ROWS57, KEY_LISTS57 = (0x24B94A0, bytes(srv57.uc.mem_read(0x24B94A0, 0xAD8))), (0x24BB4A0, bytes(srv57.uc.mem_read(0x24BB4A0, 0x1000)))
+
     def words_mem():
         m = Mem(image)
         for k, (w, h, mid) in enumerate(srows):
             m.write(t_ + 8 * k, struct.pack("<2HI", w, h, mid))
+        for a_, b_ in (ID_ROWS57, KEY_LISTS57, (0x18F62E0, bytes(16))):
+            m.write(a_, b_)
         return m
     steps = [("outsz2560_fx2_v1", "L16", "L17"), ("fehold_fx2_v1", "F16", "F17")]     # F16/F17 (fourth kit): one code word, in the loaded image
+    steps.append(("og57cp_fx2_v3", "K16", "K17"))                                     # 5.7K: four units, the 0x43f buffer row, 5760x3840
     if (HERE / "libJit_fx2_S16.so").is_file():
         steps.append(("lcd32dsq_fx2_v1", "S16", "S17"))
     for name, s_apply, s_back in steps:
@@ -420,6 +555,27 @@ def main():
         mem = words_mem()
         r, t = go(La, mem, w_allowed, lose=1)
         ok(not r.bad and "NOT DONE" in t and wstate(mem) == "stock", f"{s_apply} with the first line write lost: everything put back")
+    # K16 and L16 change the same size word: each refuses the other's state; after K16 the FX2's allocator opens 0x43f with 30,824,400 bytes
+    w57 = {int(s["ram_address"], 16) + k: (o, n) for s in design("og57cp_fx2_v3")["sites"]
+           for k, (o, n) in enumerate(zip(bytes.fromhex(s["old"]), bytes.fromhex(s["new"])))}
+    w4k = {int(s["ram_address"], 16) + k: (o, n) for s in design("outsz2560_fx2_v1")["sites"]
+           for k, (o, n) in enumerate(zip(bytes.fromhex(s["old"]), bytes.fromhex(s["new"])))}
+    mem = words_mem()
+    r, t = go(lib("L16"), mem, w4k)
+    snap = mem.snapshot()
+    r, t = go(lib("K16"), mem, w57)
+    ok(not r.bad and r.n_writes == 0 and changed_only(mem, snap, {}), "K16 on a camera holding L16's 4K output size: nothing is written")
+    mem = words_mem()
+    r, t = go(lib("K16"), mem, w57)
+    snap = mem.snapshot()
+    r2, t2 = go(lib("L16"), mem, w4k)
+    ok(not r2.bad and r2.n_writes == 0 and changed_only(mem, snap, {}), "L16 on a camera holding K16's state: nothing is written")
+    srv_after = EDS.Server(cfg57.data, cfg57)
+    assert srv_after.init() == 0
+    srv_after.uc.mem_write(0x24B94A0, mem.read(0x24B94A0, 0xAD8))
+    o57 = srv_after.open(0x43F)
+    ok(o57.get("ok") and [e["size"] for e in o57["extents"]] == [30824400],
+       "after K16 the FX2's own allocator, given the id rows K16 left, opens id 0x43f: one unit of 30,824,400 bytes (5760x3840 needs 27,648,000)")
     for label, path in (("FX3 kit S16 (lcd32dsq_fx3_v1)", HERE.parent / "helper_fx3/libJit_fx3_S16.so"),
                         ("A7C II kit level 16 (lcdfill_c2_v2)", HERE.parent / "helper_c2/libJit_c2_level16_lcdfill_c2_v2.so"),
                         ("A7C II kit level 16 (outsz2560_c2_v1)", HERE.parent / "helper_c2/libJit_c2_level16_outsz2560_c2_v1.so")):
@@ -443,7 +599,7 @@ def main():
                                  + b"%x-%x ---p %08x fc:8f 55354                          /usr/lib/libmpr.so\n" % (LM_AT + lspan, LM_AT + lspan + 0x10000, lspan)
                                  + b"7f8b936000-7f8b991000 r-xp 00000000 fc:8f 55344                          /usr/lib/libsencore.so\n")
     sts = {}
-    for dn in ("ogfile2560_hs_s_fx2_v2", "ogfile2560_hs_s_fx2_v1"):
+    for dn in ("ogfile2560_hs_s_fx2_v2", "ogfile2560_hs_s_fx2_v1", "ogfile57r300m1_fx2_v4", "ogfile57r300m1_fx2_v3", "ogfilesi2560_fx2_v1", "ogfilesi57_fx2_v1"):
         fl = design(dn)
         sts[dn] = {"av-cam.bin": [], "libmpr.so": []}
         for p in fl["patches"]:
@@ -486,6 +642,48 @@ def main():
     ok(not r.bad and a == av and m == lm0 and "NOT DONE" in t, "L19 with a libmpr.so write lost: everything put back")
     r, t, a, m = mp("L19", av, lm0, stale=[sts[V2]["av-cam.bin"][3][0]])
     ok(not r.bad and a == av and m == lm0 and "NOT DONE" in t, "L19 with the kernel's view not following a write: everything put back")
+    # ---- 5.7K and S-I (2026-11-27, GitHub issue 7): K19/K20 (ogfile57r300m1_fx2_v4), M19 (v3, --no-meta), I19/I20 on top of L19, G19/G20 on top of K19
+    V4, V3, SI4, SI57 = "ogfile57r300m1_fx2_v4", "ogfile57r300m1_fx2_v3", "ogfilesi2560_fx2_v1", "ogfilesi57_fx2_v1"
+    av4, lm4 = applied(av, V4, "av-cam.bin"), applied(lm0, V4, "libmpr.so")
+    av3, lm3 = applied(av, V3, "av-cam.bin"), applied(lm0, V3, "libmpr.so")
+    ok(av3 == av4 and lm3 != lm4, "the two 5.7K encoder designs differ only in libmpr.so (the nine MP4 size sites)")
+    r, t, a, m = mp("K19", av, lm0)
+    ok(not r.bad and a == av4 and m == lm4 and "DONE" in t, f"K19 ({V4}): {len(sts[V4]['av-cam.bin'])} + {len(sts[V4]['libmpr.so'])} sites new, every other byte unchanged")
+    r, t, a, m = mp("K19", av4, lm4)
+    ok(not r.bad and a == av4 and m == lm4 and not r.pwrites and not r.map_writes, "K19 again: no write")
+    r, t, a, m = mp("K20", av4, lm4)
+    ok(not r.bad and a == av and m == lm0 and "DONE" in t, "K20: both stock again, byte for byte")
+    r, t, a, m = mp("M19", av, lm0)
+    ok(not r.bad and a == av3 and m == lm3 and "DONE" in t, f"M19 ({V3}, --no-meta): its sites new, the MP4 size stock")
+    r, t, a, m = mp("K20", av3, lm3)
+    ok(not r.bad and a == av and m == lm0 and "DONE" in t, "K20 on a camera holding M19's state: both stock again, byte for byte")
+    r, t, a, m = mp("K19", av2, lm2)
+    ok(not r.bad and a == av2 and m == lm2 and not r.pwrites and not r.map_writes, "K19 on a camera holding L19's 4K state: nothing is written")
+    r, t, a, m = mp("L19", av4, lm4)
+    ok(not r.bad and a == av4 and m == lm4 and not r.pwrites and not r.map_writes, "L19 on a camera holding K19's 5.7K state: nothing is written")
+    r, t, a, m = mp("K19", av, lm0, pwrite_lost=[sts[V4]["libmpr.so"][0][0]])
+    ok(not r.bad and a == av and m == lm0 and "NOT DONE" in t, "K19 with a libmpr.so write lost: everything put back")
+    r, t, a, m = mp("K19", av, lm0, stale=[sts[V4]["av-cam.bin"][200][0]])
+    ok(not r.bad and a == av and m == lm0 and "NOT DONE" in t, "K19 with the kernel's view not following a write: everything put back")
+    for si, base_name, base_av, base_lm, label in (("I19", V2, av2, lm2, "I19 (ogfilesi2560_fx2_v1) on top of L19"),
+                                                    ("G19", V4, av4, lm4, "G19 (ogfilesi57_fx2_v1) on top of K19")):
+        dn = SI4 if si == "I19" else SI57
+        want_av, want_lm = bytearray(base_av), bytearray(base_lm)
+        for o, old, new in sts[dn]["av-cam.bin"]:
+            want_av[o:o + len(new)] = new
+        for o, old, new in sts[dn]["libmpr.so"]:
+            want_lm[o:o + len(new)] = new
+        r, t, a, m = mp(si, base_av, base_lm)
+        ok(not r.bad and a == bytes(want_av) and m == bytes(want_lm) and "DONE" in t,
+           f"{label}: its {len(sts[dn]['av-cam.bin'])} + {len(sts[dn]['libmpr.so'])} sites new, the HS/S step's sites untouched")
+        back = si[0] + "20"
+        r, t, a, m = mp(back, bytes(want_av), bytes(want_lm))
+        ok(not r.bad and a == base_av and m == base_lm and "DONE" in t, f"{back}: the S-I sites stock again, the HS/S step still applied, byte for byte")
+        r, t, a, m = mp(back[0] + "19", bytes(want_av), bytes(want_lm))
+        ok(not r.bad and not r.pwrites and not r.map_writes, f"{si} again: no write")
+    r, t, a, m = mp("L20", bytes(applied(applied(av, V2, "av-cam.bin"), SI4, "av-cam.bin")), applied(applied(lm0, V2, "libmpr.so"), SI4, "libmpr.so"))
+    ok(not r.bad and "DONE" in t and a == applied(av, SI4, "av-cam.bin") and m == applied(lm0, SI4, "libmpr.so"),
+       "L20 with I19 still applied: L20 puts back only its own sites (the putback runs I20 first)")
     for label, path in (("A7C II kit level 19 (ogfile2560_hs_s_c2_v1)", HERE.parent / "helper_c2/libJit_c2_level19_ogfile2560_hs_s_c2_v1.so"),
                         ("FX3 kit L19 (ogfile2560_hs_s_fx3_v2)", HERE.parent / "helper_fx3/libJit_fx3_L19.so")):
         if path.is_file():

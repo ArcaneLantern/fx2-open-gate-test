@@ -117,7 +117,13 @@ def workspace():
     return bytes(ws)
 
 
-def model(build="fx2_101", applied=False, screen=True, reserve=True, exists=False, enc="ogfile2560_hs_s_fx2_v2", test=None):
+# v5 (PAL): the stored-record pages of a real PAL-set FX2 (GitHub issue 5, stock, STILL): its 0x8c0 record is the 24.00p one, its 0x880
+# record the 50 Hz one the PAL designs expect
+PAL_DUMP = ROOT / "evidence/fx2/tester_2026-11-26_pal/zip/camera_private/CT6_20261126T203351Z_fx2_dump"
+PAL_DESIGN = {"squeeze": "ogsq880_fx2_v1", "real": "ogh2560880_fx2_v1"}
+
+
+def model(build="fx2_101", applied=False, screen=True, reserve=True, exists=False, enc="ogfile2560_hs_s_fx2_v2", test=None, pal=None):
     cp = bytearray(ex(build, "nflasha8/cpapp-b.bin"))
     av = bytearray(ex(build, "nflasha3/av-cam.bin"))
     libs = {n: ex(build, "nflasha15/lib" + n) for n in ("/libmpr.so", "/libsencore.so", "/libJiritsu.so")}
@@ -153,6 +159,19 @@ def model(build="fx2_101", applied=False, screen=True, reserve=True, exists=Fals
         struct.pack_into("<II", view, 0x44, 0x8C0, 1)
         ram[0x15CD520] = bytes(view)
         ram[0x190F46E] = bytes(16)
+        if pal:                                   # v5: a PAL-set FX2: its own stored records, and (squeeze / real) a PAL design applied
+            pages = {int(q.stem.split("_")[-1], 16): q.read_bytes() for q in PAL_DUMP.glob("cp_records_*.bin")}
+            assert len(pages) == 4
+            for a_, b_ in pages.items():
+                ram[a_] = b_
+            if pal in PAL_DESIGN:
+                pd = design(PAL_DESIGN[pal])
+                ram[int(pd["stored_record"]["address"], 16)] = bytes.fromhex(pd["stored_record"]["design"])
+                for s in dm["sites"]:
+                    ram[int(s["ram_address"], 16)] = bytes.fromhex(s["new"])
+                for q in pd["patches"]:
+                    a, new = int(q["addr"], 16), bytes.fromhex(q["new"])
+                    cp[a - BASE:a - BASE + len(new)] = new
         if test:                                  # a test design at the sensor sites and in the stored record
             td = design(test)
             ram[int(td["stored_record"]["address"], 16)] = bytes.fromhex(td["stored_record"]["design"])
@@ -200,7 +219,10 @@ def main():
     ok = True
     screen_n = sum(1 for s in FACTS["cp_sites"] if s["name"].startswith("screen"))
     # sites the applied state changes: not the output-size guards, and not the fallback's code word (v4: its own optional step, F16)
-    hard = [s for s in FACTS["cp_sites"] if not s["name"].startswith(("outsize_guard", "fehold"))]
+    # (v5: nor mode 0x880's sites, pal_*, which the NTSC state leaves stock)
+    hard = [s for s in FACTS["cp_sites"] if not s["name"].startswith(("outsize_guard", "fehold", "pal_"))]
+    n_pal = sum(1 for s in FACTS["cp_sites"] if s["name"].startswith("pal_"))
+    assert n_pal == 12 and all(s["check_only"] for s in FACTS["cp_sites"] if s["name"].startswith("pal_"))
     for which in ("check", "dump"):
         lib = (HERE / f"libJit_fx2_{which}.so").read_bytes()
         for case, kw, want in (("stock", {}, ("VERDICT READY", "STOCK")), ("applied", {"applied": True}, ("VERDICT READY", "TARGET")),
@@ -208,6 +230,11 @@ def main():
                                ("no-meta", {"applied": True, "enc": "ogfile2560_hs_s_fx2_v1"}, ("VERDICT READY", "TARGET")),
                                ("test1", {"test": "fhband_fx2_v1"}, ("VERDICT READY", "  TEST")),
                                ("test5", {"test": "ogh2560_fx2_v1"}, ("VERDICT READY", "  TEST2")),
+                               # 5.7K (2026-11-27): the records are no site design of the helper: OTHER, their bytes printed for the PC
+                               ("k57", {"test": "og57n_fx2_v1"}, ("VERDICT NOT READY", "other record_left ")),
+                               ("pal-stock", {"pal": "stock"}, ("VERDICT READY", "STOCK")),
+                               ("pal-squeeze", {"pal": "squeeze"}, ("VERDICT READY", "TARGET")),
+                               ("pal-real", {"pal": "real"}, ("VERDICT READY", "  TEST2")),
                                ("a7c2", {"build": "a7c2_201"}, ("VERDICT NOT READY", "DIFFERS from the 1.01 update")),
                                ("a7iv", {"build": "a7iv_602"}, ("VERDICT NOT READY", "DIFFERS from the 1.01 update")),
                                ("fx3", {"build": "fx3_702"}, ("VERDICT NOT READY", "DIFFERS from the 1.01 update")),
@@ -253,6 +280,30 @@ def main():
                     tg = [ln for ln in text.split("\n") if (ln.startswith("site S") or ln.startswith("site stored_record")) and ln.endswith("  TARGET")]
                     if t2 != ["record_left", "record_right"] or len(tg) != 12 or "  TEST\n" in text:
                         problems.append("test5: TEST2 at %s (want the two records), %d sites TARGET (want 12)" % (t2, len(tg)))
+                pal_l = [ln for ln in text.split("\n") if ln.startswith("site pal_")]
+                if which == "dump" and pal_l:              # v5: the PAL sites are in the check only
+                    problems.append("the dump reports PAL sites")
+                if which == "check" and len(pal_l) != n_pal:
+                    problems.append("check: %d PAL sites (want %d)" % (len(pal_l), n_pal))
+                # the cells stock; the stored record soft: on an NTSC camera mode 0x880's record is not the 50 Hz one, and on a real PAL camera
+                # its run-time bytes differ from the emulated record (13 in the PAL tester's dump), so it may read OTHER (not counted) there
+                cells_ok = lambda ln: ln.endswith("  STOCK") or (ln.startswith("site pal_stored_record ") and ln.endswith("OTHER (not counted: filled at run time)"))
+                if which == "check" and case in ("stock", "applied", "test1", "test5", "pal-stock") and not all(cells_ok(ln) for ln in pal_l):
+                    problems.append("%s: PAL sites not all STOCK: %s" % (case, [ln for ln in pal_l if not cells_ok(ln)]))
+                if which == "check" and case == "pal-stock" and not any(ln.startswith("other pal_stored_record ") for ln in text.split("\n")):
+                    problems.append("pal-stock: the PAL record's bytes are not printed (the PC judges it by the design bytes)")
+                if case.startswith("pal-"):
+                    st0 = [ln for ln in text.split("\n") if ln.startswith("site stored_record ")]
+                    recs = [ln.rsplit("  ", 1)[1] for ln in text.split("\n") if ln.startswith(("site record_left ", "site record_right "))]
+                    cells0 = [ln for ln in text.split("\n") if ln.startswith("site S")]
+                    # the 0x8c0 record of a PAL camera is not the NTSC one: reported, not counted
+                    if len(st0) != 1 or "OTHER (not counted" not in st0[0] or len(cells0) != 11 or not all(ln.endswith("  STOCK") for ln in cells0):
+                        problems.append("%s: 0x8c0 sites %s" % (case, st0 + cells0[:2]))
+                    want_r = {"pal-stock": "STOCK", "pal-squeeze": "TARGET", "pal-real": "TEST2"}[case]
+                    if recs != [want_r, want_r]:
+                        problems.append("%s: records %s (want %s)" % (case, recs, want_r))
+                    if which == "check" and case != "pal-stock" and not all(ln.endswith("  TARGET") for ln in pal_l):
+                        problems.append("%s: PAL sites not all TARGET: %s" % (case, [ln for ln in pal_l if not ln.endswith("  TARGET")]))
                 if case == "stock":                        # v4: the fallback's code word is reported, stock
                     fl_ = [ln for ln in text.split("\n") if ln.startswith("site fehold ")]
                     if len(fl_) != 1 or not fl_[0].endswith("  STOCK"):

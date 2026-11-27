@@ -47,7 +47,10 @@ def design_writes(name):
     d = json.loads((DES / f"{name}.json").read_text(encoding="utf8"))
     assert d["build"] == BUILD
     if d.get("kind") == "ram_words":
-        return [(int(s["ram_address"], 16), bytes.fromhex(s["old"]), bytes.fromhex(s["new"])) for s in d["sites"]]
+        # the memory manager's id rows of og57cp_fx2_v3 are not modelled here (build_ram_words_fx2.py og57cp opens them in the FX2's allocator):
+        # the size table and the unit-count setting are
+        return [(int(s["ram_address"], 16), bytes.fromhex(s["old"]), bytes.fromhex(s["new"])) for s in d["sites"]
+                if 0x18F6000 <= int(s["ram_address"], 16) < 0x18F7000 or 0x500000 <= int(s["ram_address"], 16) < 0x530000]
     return [(int(p["addr"], 16), bytes.fromhex(p["old"]), bytes.fromhex(p["new"])) for p in d["patches"]]
 
 
@@ -86,14 +89,14 @@ def call(uc, addr, r0, r1=0, r2=0, r3=0, stack=()):
     assert uc.reg_read(A.UC_ARM_REG_PC) == RET, hex(uc.reg_read(A.UC_ARM_REG_PC))
 
 
-def run(designs):
+def run(designs, mode=0x8C0):
     uc, calls = machine(designs)
     # the request block the function reads, P = context + 0x20 (context +0xa68 set, byte +0x9ec clear: view byte +1 = 0, as on the camera)
     p = CTX + 0x20
     uc.mem_write(OBJ + 0xC, struct.pack("<I", CTX))
     uc.mem_write(OBJ + 0x38, struct.pack("<I", OBJ2))
     uc.mem_write(CTX + 0xA68, struct.pack("<I", 1))
-    for off, v in ((0x00, 0x8C0),      # drive mode (view +0x44)
+    for off, v in ((0x00, mode),       # drive mode (view +0x44): 0x8c0 (NTSC 23.98p) or 0x880 (PAL 25p)
                    (0x18, 1),          # not zero: the request is live
                    (0x1C, 1),          # with +0x20 = 0, +0x88 != 1 and +0x6c = 0: view bytes +4, +5 = 1 (0x51ff52..0x51ff64)
                    (0x9C, 3),          # size class 3: the second 3840x2160 entry, 0x18f60f8
@@ -102,7 +105,7 @@ def run(designs):
     call(uc, SETUP, OBJ, VIEW)
     view = bytes(uc.mem_read(VIEW, 0x54))
     # the records' own first-scaler size, by the firmware's reader (what view +0x3c/+0x3e held before the override)
-    call(uc, RECORD_SIZE, 0x8C0, 0, 0, 0, stack=(OUT, 0, 0))
+    call(uc, RECORD_SIZE, mode, 0, 0, 0, stack=(OUT, 0, 0))
     rec = struct.unpack("<HH", uc.mem_read(OUT, 4))
     u = lambda o: struct.unpack_from("<HH", view, o)
     return {"designs": list(designs), "view": view.hex(), "flags_4_5": [view[4], view[5]], "first_stage": list(u(0x14)), "crop": list(u(0x38)),
@@ -120,6 +123,12 @@ def main():
              "ogh2560": ("ogh2560_fx2_v1",), "ogh2560+outsz (the main path)": ("ogh2560_fx2_v1", "outsz2560_fx2_v1"),
              "ogsq+outsz+fehold (the fallback)": ("ogsq_fx2_v1", "outsz2560_fx2_v1", "fehold_fx2_v1"), "stock+fehold": ("fehold_fx2_v1",)}
     res = {k: run(v) for k, v in cases.items()}
+    # 2026-11-27 (GitHub issue 7, 5.7K): the A7 IV's og57n_v1 / og57n880_v1 records (first scaler 5760x3840) and og57cp_v3's size word
+    # (output 5760x3840), FX2 forms; PAL in mode 0x880
+    res["og57n"] = run(("og57n_fx2_v1",))
+    res["og57n+og57cp (the 5.7K path)"] = run(("og57n_fx2_v1", "og57cp_fx2_v3"))
+    res["og57n880+og57cp (the 5.7K path, PAL, mode 0x880)"] = run(("og57n880_fx2_v1", "og57cp_fx2_v3"), 0x880)
+    res["ogh2560880+outsz (the PAL 4K path, mode 0x880)"] = run(("ogh2560880_fx2_v1", "outsz2560_fx2_v1"), 0x880)
     for k, r in res.items():
         print("%-34s first scaler: view %dx%d, records %dx%d (%s); output %dx%d; stage %dx%d; override calls %d; prints %d"
               % (k, *r["first_scaler_in_view"], *r["first_scaler_by_records"], "agree" if r["sizes_agree"] else "DIFFER", *r["output"], *r["first_stage"],
@@ -148,6 +157,14 @@ def main():
     check("the fallback: output 3840x2560, the view keeps the records' 4336x2438, 0xbd3a32 is not called",
           f["output"] == [3840, 2560] and f["first_scaler_in_view"] == [4336, 2438] and f["sizes_agree"] and f["override_calls"] == 0)
     check("fehold alone leaves the stock view unchanged", res["stock+fehold"]["view"] == res["stock"]["view"])
+    for k in ("og57n+og57cp (the 5.7K path)", "og57n880+og57cp (the 5.7K path, PAL, mode 0x880)"):
+        r = res[k]
+        check("%s: output 5760x3840, the records give 5760x3840, the view agrees (the override asks for no more)" % k,
+              r["output"] == [5760, 3840] and r["first_scaler_by_records"] == [5760, 3840] and r["sizes_agree"] and r["override_calls"] == 1)
+    check("og57n alone (stock output size): the view takes the records' 5760x3840, output 3840x2160",
+          res["og57n"]["first_scaler_in_view"] == [5760, 3840] and res["og57n"]["output"] == [3840, 2160])
+    check("the PAL 4K path in mode 0x880 (P5 + L16, which records on an FX2): 4336x2560, agrees",
+          res["ogh2560880+outsz (the PAL 4K path, mode 0x880)"]["first_scaler_in_view"] == [4336, 2560] and res["ogh2560880+outsz (the PAL 4K path, mode 0x880)"]["sizes_agree"])
     check("no case reaches a log print (FATAL lines)", all(r["log_prints"] == 0 for r in res.values()))
     ok = all(v for _, v in checks)
     print("%d of %d checks pass" % (sum(v for _, v in checks), len(checks)))

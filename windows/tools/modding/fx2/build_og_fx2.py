@@ -167,6 +167,38 @@ def build(src, mode, name):
     return offs
 
 
+def combine(sensor="ogsq880_fx2_v1", records="ogh2560_fx2_v1", name="ogh2560880_fx2_v1", squeeze="ogsq_fx2_v1"):
+    """The PAL form of the real-rows design (2026-11-27, after a PAL FX2's dumps, issue 5): the sensor cells and the stored record of `sensor`
+    (mode 0x880's rows; the record from the FX2's calculator with the 50 Hz table, which a PAL camera's dump matches), and the two picture
+    records of `records`. Allowed because on the FX2 modes 0x880 and 0x8c0 share one record pair (0xdf9958 / 0xdfa510): the A7 IV's ogh2560_v1
+    differs from its ogsq_v3 only in the two records, and ogh2560_fx2_v1's stored record equals ogsq_fx2_v1's (asserted), so the PAL stored record
+    of ogsq880_fx2_v1 is also the one that goes with the real-rows records."""
+    load = lambda n: json.loads((ROOT / "modding/designs" / f"{n}.json").read_text(encoding="utf8"))
+    s, r, q = load(sensor), load(records), load(squeeze)
+    assert s["artifact_sha256"] == r["artifact_sha256"] == q["artifact_sha256"] == SHA_F
+    assert s["mode_id"] == "0x880" and r["mode_id"] == q["mode_id"] == "0x8c0"
+    assert r["stored_record"]["design"] == q["stored_record"]["design"] and r["stored_record"]["stock"] == q["stored_record"]["stock"], \
+        "the real-rows design's stored record is not the squeeze design's"
+    assert [p for p in r["patches"] if p["kind"] == "S"] == [p for p in q["patches"] if p["kind"] == "S"], "the real-rows cells are not the squeeze cells"
+    s_rec = {p["addr"]: p for p in s["patches"] if p["kind"] == "R"}
+    r_rec = {p["addr"]: p for p in r["patches"] if p["kind"] == "R"}
+    assert sorted(s_rec) == sorted(r_rec) == sorted(hex(x) for x in REC_F), "the record pair is not the shared one"
+    for ad in REC_F:
+        assert s_rec[hex(ad)]["old"] == r_rec[hex(ad)]["old"] == a(F, ad, 3000).hex()
+    patches = [p for p in s["patches"] if p["kind"] == "S"] + [dict(r_rec[hex(ad)], note=r_rec[hex(ad)]["note"] + " [the real-rows record, for mode 0x880 too: "
+                                                                                    "the pair is shared]") for ad in REC_F]
+    assert len(patches) == 13
+    out = {k: v for k, v in s.items() if k not in ("patches", "design", "title", "generated_by", "ported_from")}
+    out.update({"design": name, "title": r["title"].replace("(FX2 1.01 port)", "") .strip() + " - PAL, mode 0x880, 25p (FX2 1.01 port)",
+                "generated_by": "build/build_og_fx2.py combine(%s, %s)" % (sensor, records),
+                "ported_from": {"sensor_cells_and_stored_record": sensor, "records": records,
+                                "a7iv": {"sensor": s["ported_from"], "records": r["ported_from"]}},
+                "patches": patches})
+    (ROOT / "modding/designs" / f"{name}.json").write_text(json.dumps(out, indent=1) + "\n", encoding="utf8", newline="\n")
+    print(f"{name}: cells and stored record of {sensor} (mode {s['mode_id']}, record at {s['stored_record']['address']}), records of {records}; "
+          f"{len(patches)} sites, {sum(len(p['old']) // 2 for p in patches)} bytes")
+
+
 if __name__ == "__main__":
     # fhband_fx2_v1 (2026-11-26, after the first FX2 test crashed on movie entry): the A7 IV's fhband_v1 (F658: full-height read-out, the stock
     # 16:9 band kept, stage height stock), the second kit's test 1. It needs no stored_record_extra.
@@ -176,4 +208,9 @@ if __name__ == "__main__":
     # 2,560 rows too (modding/FX2_PORT.md, "Why L16 crashed").
     for src, mode, name in (("ogsq_v3", 0x8C0, "ogsq_fx2_v1"), ("ogsq880_v1", 0x880, "ogsq880_fx2_v1"), ("fhband_v1", 0x8C0, "fhband_fx2_v1"),
                             ("ogh2560_v1", 0x8C0, "ogh2560_fx2_v1")):
+        build(src, mode, name)
+    # ogh2560880_fx2_v1 (2026-11-27, PAL): the real-rows records with mode 0x880's cells and PAL stored record (combine above)
+    combine()
+    # og57n_fx2_v1 / og57n880_fx2_v1 (2026-11-27, GitHub issue 7: 5.7K): the A7 IV's og57n_v1 / og57n880_v1 (first scaler 5760x3840, F906)
+    for src, mode, name in (("og57n_v1", 0x8C0, "og57n_fx2_v1"), ("og57n880_v1", 0x880, "og57n880_fx2_v1")):
         build(src, mode, name)

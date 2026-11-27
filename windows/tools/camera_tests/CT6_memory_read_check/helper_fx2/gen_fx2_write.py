@@ -10,6 +10,7 @@ screen words). The write levels of readcheck.c are used as they are; only their 
 This writes, into helper/, in gen_expected.py's formats:
   expected_dmm_dmmwb4688_fx2_v1.h            levels 13/14: the four DMM words, their unit records and the parent records
   expected_sites_ogsq_fx2_v1.h               levels 5/6: 13 sensor/record sites and the changed bytes of the 0x170-byte stored record
+  expected_sites_ogsq880_fx2_v1.h, expected_sites_ogh2560880_fx2_v1.h   the same for mode 0x880 (PAL 25p; fifth kit)
   expected_words_outsz2560_fx2_v1.h          levels 16/17: the output-size word and its guards
   expected_words_lcd32dsq_fx2_v1.h           levels 16/17 (S16/S17): the rear screen at 3:2, the frame rectangles, the de-squeeze words
   expected_mp_ogfile2560_hs_s_fx2_v2.h       levels 19/20: encoder-side sites in av-cam.bin and libmpr.so, with the two MP4 header heights
@@ -132,7 +133,13 @@ SIZE_TABLE = (0x18F60B0, 0x18F60B0 + 0x80)
 # fehold_fx2_v1 (fourth kit): one CODE word of the resize set-up 0x51fbc0, the branch over the FX2's first-scaler override; its guards are
 # the 16 code bytes before and after (build/build_ram_words_fx2.py fehold(), which decodes them)
 FEHOLD_SITE, FEHOLD_GUARDS = (0x51FEF8, 0x51FEFC), ((0x51FEE8, 0x51FEF8), (0x51FEFC, 0x51FF0C))
-WORD_REGIONS = {"outsz2560_fx2_v1": ((SIZE_TABLE,), ()), "fehold_fx2_v1": ((FEHOLD_SITE,), FEHOLD_GUARDS)}
+# og57cp_fx2_v3 (2026-11-27, 5.7K): the unit-count setting 0x18f62e8 (the split rule 0x509e5a reads it) with its zero neighbours as guards, the
+# memory manager's id rows (0x24b94a0, 346 rows of 8 bytes and an end row) and, as guards only, the key lists after them
+SETTING = (0x18F62E8, 0x18F62EC)
+ID_ROWS = (0x24B94A0, 0x24B94A0 + 0xAD8)
+KEY_LISTS = (0x24BB4A0, 0x24BB4A0 + 0x1000)
+WORD_REGIONS = {"outsz2560_fx2_v1": ((SIZE_TABLE,), ()), "fehold_fx2_v1": ((FEHOLD_SITE,), FEHOLD_GUARDS),
+                "og57cp_fx2_v3": ((SIZE_TABLE, SETTING, ID_ROWS), ((0x18F62E0, 0x18F62F0), KEY_LISTS))}
 LCD_REGIONS = HERE / "lcd_regions_fx2.json"         # written from the screen design's builder (site regions, guard-only regions)
 
 
@@ -198,6 +205,11 @@ def mp_header(name):
                 assert lm[a:a + len(b)] == b and len(b) <= 16
                 g_lm.append((a, b))
             continue
+        if len(old) == 4:                                        # 5.7K (2026-11-27): the row's whole raster (width and height), as in
+            # helper_c2/gen_c2_write.py: the guard is the 4-byte codec word before it (1 for the HEVC rows 5 and 7, 0 for the AVC rows 0, 2, 9)
+            assert (off - 4 - COMB) % 0x18 == 0 and struct.unpack("<HH", old) == (3840, 2160)
+            g_lm.append((off - 4, lm[off - 4:off]))
+            continue
         assert (off - 6 - COMB) % 0x18 == 0 and struct.unpack_from("<H", lm, off - 2)[0] == 3840
         g_lm.append((off - 6, lm[off - 6:off]))
     for binary, guards in (("av-cam.bin", g_av), ("libmpr.so", g_lm)):
@@ -236,9 +248,19 @@ if __name__ == "__main__":
     print("sites header ogsq_fx2_v1", sites_header())
     print("sites header fhband_fx2_v1 (second kit, test 1)", sites_header("fhband_fx2_v1"))
     print("sites header ogh2560_fx2_v1 (fourth kit: the first scaler gives 4336x2560)", sites_header("ogh2560_fx2_v1"))
+    # fifth kit (2026-11-27, PAL): mode 0x880 (25p on a PAL-set FX2; its stored record comes from the 50 Hz input table)
+    print("sites header ogsq880_fx2_v1 (fifth kit: PAL squeeze, mode 0x880)", sites_header("ogsq880_fx2_v1"))
+    print("sites header ogh2560880_fx2_v1 (fifth kit: PAL real rows, mode 0x880)", sites_header("ogh2560880_fx2_v1"))
+    # 5.7K (2026-11-27, GitHub issue 7): the A7 IV's og57n_v1 / og57n880_v1 (first scaler 5760x3840), K5/K6 and J5/J6
+    print("sites header og57n_fx2_v1 (5.7K, mode 0x8c0)", sites_header("og57n_fx2_v1"))
+    print("sites header og57n880_fx2_v1 (5.7K PAL, mode 0x880)", sites_header("og57n880_fx2_v1"))
     print("words header outsz2560_fx2_v1", words_header("outsz2560_fx2_v1"))
     print("words header fehold_fx2_v1 (fourth kit, the fallback)", words_header("fehold_fx2_v1"))
+    print("words header og57cp_fx2_v3 (5.7K: four scaler units, the 0x43f buffer row, the output size 5760x3840)", words_header("og57cp_fx2_v3"))
     if (DES / "lcd32dsq_fx2_v1.json").exists():
         print("words header lcd32dsq_fx2_v1", words_header("lcd32dsq_fx2_v1"))
-    for n in ("ogfile2560_hs_s_fx2_v2", "ogfile2560_hs_s_fx2_v1"):
+    for n in ("ogfile2560_hs_s_fx2_v2", "ogfile2560_hs_s_fx2_v1",
+              # 2026-11-27 (GitHub issue 7): the 5.7K encoder side (the A7 IV's ogfile57r300m1_v4, and v3 without the MP4 size for --no-meta)
+              # and the XAVC S-I 4K steps on top of the 3840x2560 and 5760x3840 states
+              "ogfile57r300m1_fx2_v4", "ogfile57r300m1_fx2_v3", "ogfilesi2560_fx2_v1", "ogfilesi57_fx2_v1"):
         print("mp header", n, mp_header(n))
