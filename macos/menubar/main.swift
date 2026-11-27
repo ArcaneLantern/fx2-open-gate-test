@@ -8,8 +8,20 @@ import AppKit
 // app is moved, so the launcher folder is baked in at build time (see build.command: __KITMACOS__).
 let kitMacOS = "__KITMACOS__"
 
+let anamorphicFlag = (NSHomeDirectory() as NSString).appendingPathComponent(".fx2_opengate_anamorphic")
+
 final class AppDelegate: NSObject, NSApplicationDelegate {
     var statusItem: NSStatusItem!
+    var anamorphicItem: NSMenuItem!
+
+    @objc func toggleAnamorphic() {
+        if FileManager.default.fileExists(atPath: anamorphicFlag) {
+            try? FileManager.default.removeItem(atPath: anamorphicFlag)
+        } else {
+            FileManager.default.createFile(atPath: anamorphicFlag, contents: Data("on\n".utf8))
+        }
+        anamorphicItem.state = FileManager.default.fileExists(atPath: anamorphicFlag) ? .on : .off
+    }
 
     func applicationDidFinishLaunching(_ note: Notification) {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -29,6 +41,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         header(menu, "5.7K · 5760 × 3840 · 300 Mbps")
         add(menu, "Apply now — camera already plugged in", "open_gate_fast_57.command")
         add(menu, "Arm, then plug in the camera", "arm_open_gate_57.command")
+        menu.addItem(.separator())
+        // The launchers read this file: with it, Apply / Arm also set De-Squeeze Display 1.3x to 2.25:1 (A16, 1.5x anamorphic lenses).
+        anamorphicItem = NSMenuItem(title: "1.5× anamorphic preview (De-Squeeze 1.3× → 2.25:1)", action: #selector(toggleAnamorphic), keyEquivalent: "")
+        anamorphicItem.target = self
+        anamorphicItem.state = FileManager.default.fileExists(atPath: anamorphicFlag) ? .on : .off
+        menu.addItem(anamorphicItem)
+        add(menu, "Add 1.5× preview now (open gate already applied)", "desqueeze_15x.command")
         menu.addItem(.separator())
         add(menu, "Check only (nothing written)", "check_readonly.command")
         add(menu, "Undo 3840 × 2560 (no battery pull)", "open_gate_putback_3840x2560.command")

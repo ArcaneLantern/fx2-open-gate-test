@@ -9,7 +9,10 @@ PY="$PWD/.venv/bin/python"
 TOOLS="$PWD/../windows/tools/camera_tests/CT6_memory_read_check"
 PRIVATE="$PWD/../windows/camera_private"
 PLAN="${FX2_PLAN:-og2560}"                     # og2560 = 3840x2560, og57 = 5.7K (5760x3840); the _57 launchers set it
-case "$PLAN" in og2560) LABEL="3840x2560";; og57) LABEL="5.7K (5760x3840)";; *) echo "Unknown plan $PLAN"; exit 1;; esac
+# The menu bar app's "1.5x anamorphic preview" checkbox: with this file present the plan also runs A16 (De-Squeeze 1.3x -> 2.25:1)
+[ -f "$HOME/.fx2_opengate_anamorphic" ] && case "$PLAN" in og2560|og57) PLAN="${PLAN}a";; esac
+case "$PLAN" in og2560) LABEL="3840x2560";; og57) LABEL="5.7K (5760x3840)";; og2560a) LABEL="3840x2560 + 1.5x anamorphic preview";;
+  og57a) LABEL="5.7K (5760x3840) + 1.5x anamorphic preview";; *) echo "Unknown plan $PLAN"; exit 1;; esac
 done_() { echo; read -r -p "Press Return to close. "; exit "$1"; }
 [ -x "$PY" ] || { echo "Python environment missing: run setup.command first."; done_ 1; }
 "$PY" -I -B "$TOOLS/fx2_batch.py" "$PLAN" --dry-run >/dev/null || { echo "!! The offline checks failed. Nothing was sent."; done_ 1; }
