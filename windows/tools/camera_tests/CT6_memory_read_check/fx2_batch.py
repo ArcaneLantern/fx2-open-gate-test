@@ -40,8 +40,10 @@ PLANS = {
     "og2560": ("check", "L13", "H5", "L16", "L19", "S16"),   # the 3840x2560 open gate (fourth kit's og2560), ran on this FX2 2026-11-26
     "squeeze": ("check", "L13", "L5", "S16"),                 # the squeezed open gate (pull request #3)
     "og57": ("check", "L13", "K5", "K16", "K19", "S16"),      # 5.7K, 5760x3840 (fifth kit's og57; one step per session ran on this FX2 2026-11-27)
-    # LOCAL 2026-11-28: READ-ONLY. The xref scan of the coprocessor code in eleven parts (fx2_run.XREF_PARTS), in one connection.
-    "xrefscan": ("check",) + tuple(F.XREF_PARTS),
+    # LOCAL: the same plus A16 (De-Squeeze Display 1.3x shows 2.25:1, for 1.5x anamorphic lenses; needs S16 first, which these plans do).
+    # A16 alone ran on this FX2 2026-11-27 on top of S16 and showed the 2.25:1 preview.
+    "og2560a": ("check", "L13", "H5", "L16", "L19", "S16", "A16"),
+    "og57a": ("check", "L13", "K5", "K16", "K19", "S16", "A16"),
 }
 
 
@@ -51,12 +53,19 @@ def what(step):
     return F.WRITE_STEPS[step][2] if step in F.WRITE_STEPS else "the read-only check (fx2read): identity, every site stock or target, nothing written"
 
 
+FAMILY = None      # live runs: "NTSC" or "PAL", the family the plan's sensor-side step was picked for (set in main)
+
+
 def step_ok(step, facts):
     s3 = facts["s3"]
     if step in F.WRITE_STEPS:
         return s3["ok"], s3["outcome"]
     ready = (facts.get("header_ok") and s3.get("ready") and not s3.get("identity_differs") and s3.get("identity_same", 0) > 0
              and any(v in s3.get("header", "") for v in ("fx2read_v1 ", "fx2read_v2 ", "fx2read_v3 ", "fx2read_v4 ", "fx2read_v5 ")))
+    if ready and FAMILY:
+        fam = F.camera_state(s3)["family"].split(" ")[0]
+        if fam in ("NTSC", "PAL") and fam != FAMILY:
+            return False, "the check reads this camera as %s, but the plan has the %s steps" % (fam, FAMILY)
     return bool(ready), s3.get("verdict", "no verdict")
 
 
@@ -190,15 +199,20 @@ def main():
     ap.add_argument("--dry-run", action="store_true", help="checks and the simulated run only; nothing is sent")
     ap.add_argument("--go", action="store_true")
     ap.add_argument("--firmware-shown")
+    ap.add_argument("--ntsc", action="store_true", help="the camera is set to NTSC: the plans' own sensor-side steps (L5 / H5 / K5)")
+    ap.add_argument("--pal", action="store_true", help="the camera is set to PAL: the PAL sensor-side steps (Q5 / P5 / J5, mode 0x880)")
     a = ap.parse_args()
-    plan = PLANS[a.plan]
+    import fx2_apply as A
+    global FAMILY
+    family = A.choose_family(a, a.go and not a.dry_run)   # --ntsc / --pal, else the newest saved check, else asked (live)
+    plan = tuple(A.PAL_STEPS.get(s, s) for s in PLANS[a.plan]) if family == "PAL" else PLANS[a.plan]
     libs = {}
     for step in plan:
         if step not in F.WRITE_STEPS and step != "check" and step not in F.XREF_PARTS:
             raise SystemExit("%s is not a step of this kit. Nothing was sent." % step)
         libs[step] = F.use(step)                       # the pinned build, or it stops here
     session, sent = offline_checks(plan, libs)
-    print("FX2 1.01, batch %s: %d steps in one connection: %s" % (a.plan, len(plan), " ".join(plan)))
+    print("FX2 1.01, batch %s (%s): %d steps in one connection: %s" % (a.plan, family, len(plan), " ".join(plan)))
     for n, step in enumerate(plan, 1):
         print("  %d. %s  %s  (library %s...)" % (n, step, what(step), F.PINS[step][1][:16]))
     print("Offline: every library pinned, the kit's refusals and self-test passed for each, and the whole batch ran on the simulated camera "
@@ -208,7 +222,7 @@ def main():
         return
     if not a.go or a.firmware_shown != F.FIRMWARE:
         raise SystemExit("A live run needs --go and --firmware-shown %s. Nothing was sent." % F.FIRMWARE)
-    import fx2_apply as A
+    FAMILY = family                                    # the in-connection check must read the camera as this family
     if plan[0] != "check":                             # without the in-connection check, the kit's rule: a saved READY check first
         chk = A.last_check()
         if chk is None or not chk[1]:
@@ -222,7 +236,7 @@ def main():
     R.KNOWN_LIBS.update({pin[1]: pin[0] for pin in F.PINS.values()})
     first_clear = F.last_saved_sha()
     with c.Session("fx2_batch_%s" % a.plan, test="CT6") as session:
-        session.results.update(firmware_shown_on_camera=a.firmware_shown, model=F.MODEL, which="batch_" + a.plan, plan=list(plan),
+        session.results.update(firmware_shown_on_camera=a.firmware_shown, model=F.MODEL, which="batch_" + a.plan, plan=list(plan), family=family,
                                libraries={s: F.PINS[s][1] for s in plan},
                                pc={"platform": platform.platform(), "python": sys.version.split()[0]})
         F.use(plan[0])

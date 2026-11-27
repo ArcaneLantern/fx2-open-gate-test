@@ -131,9 +131,13 @@ WRITE_STEPS = {
     # FX2's own De-Squeeze Display is kept (its ratios are part of S16).
     "S16": ("libJit_fx2_S16.so", "dd8bb759cef4dc8f9b3c63722d3c51036217bb67bda5967c88ca093d8b8f9df0", "apply the screen words lcd32dsq_fx2_v1 (the 3:2 rear screen filled with the whole picture, the focus-frame rectangles, and De-Squeeze Display ratios for a 3:2 picture: 18 words)"),
     "S17": ("libJit_fx2_S17.so", "34075aa0bf39d67ca5623bc0913599fd3c2ada3916bb2ba99d63bc214339b0d8", "put back the screen words lcd32dsq_fx2_v1"),
+    # LOCAL (2026-11-27): the menu's De-Squeeze Display 1.3x shows 2.25:1 (a 3:2 frame through a 1.5x anamorphic lens) instead of S16's
+    # 1.95:1 (helper/expected_words_dsq15_fx2_v1.h). On top of S16 only (its stock bytes are S16's). Display only. Not run on any camera.
+    "A16": ("libJit_fx2_A16.so", "cd6f420299a297aab6c2df3665e3b799946615a4220f42d5a4f04e87d1119886", "LOCAL: De-Squeeze Display 1.3x entry shows 2.25:1 for 1.5x anamorphic lenses (dsq15_fx2_v1, on top of S16)"),
+    "A17": ("libJit_fx2_A17.so", "f190f3c211b501d1ea8291439d2092b254c5be7a4be8844450eaafe1e0ac4764", "LOCAL: put back S16's 1.3x shape (1.95:1)"),
 }
 PINS.update({k: v[:2] for k, v in WRITE_STEPS.items()})
-LEVELS.update({k: {"L": 200, "S": 300, "N": 500, "B": 700, "H": 800, "F": 900, "Q": 1000, "P": 1100, "K": 1200, "J": 1300, "I": 1400, "G": 1500, "M": 1600}[k[0]] + int(k[1:])
+LEVELS.update({k: {"L": 200, "S": 300, "N": 500, "B": 700, "H": 800, "F": 900, "Q": 1000, "P": 1100, "K": 1200, "J": 1300, "I": 1400, "G": 1500, "M": 1600, "A": 1800}[k[0]] + int(k[1:])
                for k in WRITE_STEPS})
 WHICH = "check"
 FULL_HEIGHT_COLUMN = 5          # the register-matrix column of the full-height read-out (ogsq_fx2_v1's S0: mode 0x8c0 column 6 -> 5, as on the A7 IV)
