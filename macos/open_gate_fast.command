@@ -9,20 +9,22 @@ cd "$(dirname "$0")" || exit 1
 PY="$PWD/.venv/bin/python"
 TOOLS="$PWD/../windows/tools/camera_tests/CT6_memory_read_check"
 PRIVATE="$PWD/../windows/camera_private"
+PLAN="${FX2_PLAN:-og2560}"                     # og2560 = 3840x2560, og57 = 5.7K (5760x3840); the _57 launchers set it
+case "$PLAN" in og2560) LABEL="3840x2560";; og57) LABEL="5.7K (5760x3840)";; *) echo "Unknown plan $PLAN"; exit 1;; esac
 done_() { echo; read -r -p "Press Return to close. "; exit "$1"; }
 [ -x "$PY" ] || { echo "Python environment missing: run setup.command first."; done_ 1; }
 # Spotlight indexing the camera's card can block the unmount (seen 2026-11-26): a marker file tells it never to index the FX2's card.
 for v in /Volumes/*; do [ -d "$v/PRIVATE/M4ROOT" ] && touch "$v/.metadata_never_index" 2>/dev/null; done
-"$PY" -I -B "$TOOLS/fx2_batch.py" og2560 --dry-run >/dev/null || { echo "!! The offline checks of the batch failed. Nothing was sent. Use open_gate_3840x2560_test.command."; done_ 1; }
-echo "Open gate 3840x2560 (one connection, check included): camera on STILL, fresh power-on (battery out), USB in. Your Mac password, once:"
+"$PY" -I -B "$TOOLS/fx2_batch.py" "$PLAN" --dry-run >/dev/null || { echo "!! The offline checks of the batch failed. Nothing was sent. Use open_gate_3840x2560_test.command."; done_ 1; }
+echo "Open gate $LABEL (one connection, check included): camera on STILL, fresh power-on (battery out), USB in. Your Mac password, once:"
 sudo /bin/bash -c '
   trap : INT
-  PY=$1; TOOLS=$2; PRIVATE=$3
+  PY=$1; TOOLS=$2; PRIVATE=$3; PLAN=$4
   for v in /Volumes/*; do [ -d "$v/PRIVATE/M4ROOT" ] && mdutil -i off "$v" >/dev/null 2>&1; done
-  "$PY" -I -B "$TOOLS/fx2_batch.py" og2560 --go --firmware-shown 1.01
+  "$PY" -I -B "$TOOLS/fx2_batch.py" "$PLAN" --go --firmware-shown 1.01
   status=$?
   [ -d "$PRIVATE" ] && chown -R "$SUDO_UID:$SUDO_GID" "$PRIVATE"
-  exit $status' go "$PY" "$TOOLS" "$PRIVATE"
+  exit $status' go "$PY" "$TOOLS" "$PRIVATE" "$PLAN"
 status=$?
 echo
 [ $status -eq 0 ] && echo ">>> Done. Unplug, set MOVIE, shoot (4K 24p, SteadyShot Off). Do not power off." || echo ">>> Stopped (status $status). See the lines above."

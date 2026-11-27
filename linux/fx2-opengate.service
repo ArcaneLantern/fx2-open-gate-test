@@ -1,0 +1,13 @@
+[Unit]
+Description=FX2 open gate dongle (applies the 3840x2560 open gate when the FX2 is plugged in)
+After=local-fs.target
+
+[Service]
+Type=simple
+ExecStart=/opt/fx2-opengate/venv/bin/python -I -B /opt/fx2-opengate/kit/linux/opengate_dongle.py
+Restart=always
+RestartSec=2
+User=root
+
+[Install]
+WantedBy=multi-user.target

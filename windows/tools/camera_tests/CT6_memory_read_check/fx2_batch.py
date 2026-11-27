@@ -39,6 +39,7 @@ PLANS = {
     # ILME-FX2 1.01 with every identity check the same. This replaces the separate check session (and the camera's re-plug after it).
     "og2560": ("check", "L13", "H5", "L16", "L19", "S16"),   # the 3840x2560 open gate (fourth kit's og2560), ran on this FX2 2026-11-26
     "squeeze": ("check", "L13", "L5", "S16"),                 # the squeezed open gate (pull request #3)
+    "og57": ("check", "L13", "K5", "K16", "K19", "S16"),      # 5.7K, 5760x3840 (fifth kit's og57; one step per session ran on this FX2 2026-11-27)
 }
 
 
@@ -51,7 +52,7 @@ def step_ok(step, facts):
     if step in F.WRITE_STEPS:
         return s3["ok"], s3["outcome"]
     ready = (facts.get("header_ok") and s3.get("ready") and not s3.get("identity_differs") and s3.get("identity_same", 0) > 0
-             and any(v in s3.get("header", "") for v in ("fx2read_v1 ", "fx2read_v2 ", "fx2read_v3 ", "fx2read_v4 ")))
+             and any(v in s3.get("header", "") for v in ("fx2read_v1 ", "fx2read_v2 ", "fx2read_v3 ", "fx2read_v4 ", "fx2read_v5 ")))
     return bool(ready), s3.get("verdict", "no verdict")
 
 
@@ -212,6 +213,9 @@ def main():
     if not A.wait_for_drive(True):
         raise SystemExit("The camera did not show up as a USB drive. Nothing was sent.")
     import ct1_stage2_service as service
+    # A library of THIS kit left on the service partition by a session that was cut off (seen 2026-11-27: S16's write got no answer, the file
+    # stayed, and survives a battery pull) is deleted by the runner's own remove_leftover and the batch goes on. Anything else still stops it.
+    R.KNOWN_LIBS.update({pin[1]: pin[0] for pin in F.PINS.values()})
     first_clear = F.last_saved_sha()
     with c.Session("fx2_batch_%s" % a.plan, test="CT6") as session:
         session.results.update(firmware_shown_on_camera=a.firmware_shown, model=F.MODEL, which="batch_" + a.plan, plan=list(plan),
