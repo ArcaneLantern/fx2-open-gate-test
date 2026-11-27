@@ -83,6 +83,8 @@
 | `open_gate_5760x3840_si_test.cmd` | The 5.7K test **plus XAVC S-I 4K**. Not yet run on an FX2 | **Yes: memory only** |
 | `open_gate_putback_3840x2560_si.cmd`, `open_gate_putback_5760x3840_si.cmd` | Put the S-I states back without a battery pull | Yes: memory only |
 | `test7_frontend_hold.cmd` | **Test 7, the fallback** (fourth kit): raw write buffer, sensor step L5, one code word that keeps the first-scaler size (F16), output size, encoder. Only if test 5 gives no picture. Not yet run on an FX2 | **Yes: memory only** |
+| `macos/arm_open_gate.command` (macOS only) | **Arm, then plug in** (a tester's addition, 2026-11-26): asks the Mac password once, waits up to 15 minutes for the FX2, and the moment it connects runs the read-only check and the 3840 × 2560 steps (L13, H5, L16, L19, S16) **in one USB connection** (`fx2_batch.py`). Nothing is written unless that check, in the same connection, says VERDICT READY for an ILME-FX2 1.01. A notification says Done. Ran on an FX2 1.01: check + 5 steps DONE in a 6.9 s session, 3840 × 2560 clips | **Yes: memory only** |
+| `macos/open_gate_fast.command` (macOS only) | The same one-connection run, started by hand with the camera already plugged in | **Yes: memory only** |
 
 Nothing in this kit writes to the camera's firmware or to its settings.
 
