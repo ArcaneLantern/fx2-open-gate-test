@@ -40,6 +40,10 @@ PLANS = {
     "og2560": ("check", "L13", "H5", "L16", "L19", "S16"),   # the 3840x2560 open gate (fourth kit's og2560), ran on this FX2 2026-11-26
     "squeeze": ("check", "L13", "L5", "S16"),                 # the squeezed open gate (pull request #3)
     "og57": ("check", "L13", "K5", "K16", "K19", "S16"),      # 5.7K, 5760x3840 (fifth kit's og57; one step per session ran on this FX2 2026-11-27)
+    # LOCAL: the same plus A16 (De-Squeeze Display 1.3x shows 2.25:1, for 1.5x anamorphic lenses; needs S16 first, which these plans do).
+    # A16 alone ran on this FX2 2026-11-27 on top of S16 and showed the 2.25:1 preview.
+    "og2560a": ("check", "L13", "H5", "L16", "L19", "S16", "A16"),
+    "og57a": ("check", "L13", "K5", "K16", "K19", "S16", "A16"),
 }
 
 
