@@ -53,7 +53,24 @@ PINS = {"check": ("libJit_fx2_check.so", "a5bfb54714b684ada9e24076be1a007f77c2ca
 # fx2read_v3 (third kit, ran on the tester's FX2 2026-11-26): check 696c9be6..., dump 6a234dde...
 # fx2read_v2 (second kit, ran on the tester's FX2 2026-11-26): check 9dd469a2..., dump 1f51dc2a...
 # the first kit's read helper (fx2read_v1, 2026-11-25; ran on the first tester's FX2): check e3838945..., dump 5008ec3a...
-LEVELS = {"check": 101, "dump": 102}              # numbers outside the A7 IV runner's own levels: none of its level-specific code runs
+LEVELS = {"check": 101, "dump": 102}
+# LOCAL (2026-11-28): the xref scan in parts that each finish well within the host's wait (~3.85 ms per 4 KB page on an FX2 1.01, so 360 pages
+# about 1.4 s), built with -DDUMP=2 -DXREF_LO/-DXREF_HI -DXREF_MAX_PAGES=400; fx2_batch.py's plan "xrefscan" runs all of them in one connection.
+XREF_PARTS = {
+    "xref01": ("libJit_fx2_xref01.so", "ec9daf52b6872313bf0d866eea25a318c66ffd36db27c3457aac4cebfaf4a3e5"),      # 0x108000-0x270000
+    "xref02": ("libJit_fx2_xref02.so", "9804bf4112314ca0c84becdc3e9e99ad0977f99e4ec5046097b764ede43813e7"),      # 0x270000-0x3d8000
+    "xref03": ("libJit_fx2_xref03.so", "ab1d28fe31b6a2eee2025e4f4db305062649bbb4de9beeca60301af27cf35a08"),      # 0x3d8000-0x540000
+    "xref04": ("libJit_fx2_xref04.so", "914c7aefde756b79b4e39bf2f8ff49db24ccd8fcd5bcbbba2a7ec10066acfb39"),      # 0x540000-0x6a8000
+    "xref05": ("libJit_fx2_xref05.so", "e2b6d76e389c035fcdedbb6fad21315cfe644be7549d896423499adff2a1ccf9"),      # 0x6a8000-0x810000
+    "xref06": ("libJit_fx2_xref06.so", "1a91e738ac3cf97d7bbdf2aaab72167dd01068dd7bcd928ff3621968c0cf5fde"),      # 0x810000-0x978000
+    "xref07": ("libJit_fx2_xref07.so", "224dff774f92bda1cba10674183dedad0795fd101ff78d240a729aa5cacb2445"),      # 0x978000-0xae0000
+    "xref08": ("libJit_fx2_xref08.so", "644127939dcd6e48494d9a30c3265e3a11838822f5d89dbb86dcb7f09f8a778f"),      # 0xae0000-0xc48000
+    "xref09": ("libJit_fx2_xref09.so", "95e0fdbe75066598b3b5a6459c81756d4174d6a70ef28034f37efb19e94cd02e"),      # 0xc48000-0xdb0000
+    "xref10": ("libJit_fx2_xref10.so", "05deba278c8fbbf14040e77df5f8a36d390468256a4e52358e642145240c73d8"),      # 0xdb0000-0xf18000
+    "xref11": ("libJit_fx2_xref11.so", "5128d9e82c8c7299f20e5c7c5b5605f7b98f22b181743ba7c750bcf10c6aea3a"),      # 0xf18000-0x1000000
+}
+PINS.update(XREF_PARTS)
+LEVELS.update({k: 104 + i for i, k in enumerate(XREF_PARTS)})              # numbers outside the A7 IV runner's own levels: none of its level-specific code runs
 # THE WRITE STEPS. Each is one library built from the A7 IV helper's write code with this camera's tables (helper_fx2/build_fx2_write.sh).
 # They change the running camera's memory until a cold boot. They are run through fx2_apply.py, never by a launcher of the read-only kit,
 # and the libraries are not in the published kit unless it was published with --include-write.
@@ -186,7 +203,7 @@ def check_result(data):
           "avcam_bytes": {m.group(1): m.group(2) for m in (re.match(r"av (0x[0-9a-f]+) bytes ([0-9a-f]+)  ", ln) for ln in lines) if m},
           "libmpr_bytes": {m.group(1): m.group(2) for m in (re.match(r"lm (0x[0-9a-f]+) at 0x[0-9a-f]+ bytes ([0-9a-f]+)  ", ln) for ln in lines) if m},
           "avcam_stock": count(r"^av .*  STOCK$"), "avcam_target": count(r"^av .*  TARGET$"), "avcam_other": count(r"^av .*  OTHER$"),
-          "avcam_guards": [ln for ln in lines if ln.startswith("guard ")], "problem_lines": [ln for ln in lines if ln.startswith("!!")],
+          "avcam_guards": [ln for ln in lines if ln.startswith("guard ")], "xref_lines": [ln for ln in lines if ln.startswith("xref ")], "problem_lines": [ln for ln in lines if ln.startswith("!!")],
           "pages": len(pages), "other_bytes": {k: v for k, v in other_bytes.items() if "stored_record" in k or k.startswith("record_")}}
     cmd = re.search(r"== file /proc/cmdline\n(.*?)\n== end", text, re.S)
     ver = re.search(r"== file /proc/version\n(.*?)\n== end", text, re.S)
@@ -479,6 +496,24 @@ def use(which):
 _make_sim = R.make_sim
 
 
+def body_fetch(session, camera, lib):
+    """--fetch-result (LOCAL, 2026-11-28): after a write that got no answer (the helper ran longer than the host waited), read the result it left
+    on the RAM disk instead of running it again. Uploads nothing; deletes the leftover library only if it is this script's pinned one."""
+    out = session.results["ct6"] = {"library_sha256": R.LIB_SHA256, "library_sent": False, "fetch_only": True}
+    R.known_answer(session, camera)
+    there, data = R.read(camera, R.LIB_PATH)
+    if there:
+        if c.sha256(data) != R.LIB_SHA256:
+            raise c.StopTest("the libJit.so on the camera (%d bytes) is not this script's library. It is left alone; nothing was read." % len(data))
+        R.remove(session, camera, out)
+    there, result = R.read(camera, R.RESULT_PATH)
+    if not there:
+        raise c.StopTest("no result file on the RAM disk (a cold boot clears it)")
+    session.save_bytes("readcheck_result.txt", result)
+    out["result"] = check_result(result)
+    session.say("Result read: %d bytes" % len(result))
+
+
 def selftest(lib):
     done = []
 
@@ -499,12 +534,12 @@ def selftest(lib):
     else:
         check(f.get("ready") and not f.get("identity_differs"), "normal run: the %s helper reports a stock 1.01 camera as READY" % sim.how)
     if sim.how == "emulated":
-        want_sites = [x for x in expected()["cp_sites"] if not (WHICH == "dump" and x.get("check_only"))]     # v5: pal_* in the check only
-        check(len(f["coprocessor_sites"]) == len(want_sites) and f["avcam_stock"] == 101 and len(f["libmpr_sites"]) == expected()["lm_sites"] == 6,
+        want_sites = [x for x in expected()["cp_sites"] if not ((WHICH == "dump" or WHICH.startswith("xref")) and x.get("check_only"))]     # v5: pal_* in the check only
+        check(len(f["coprocessor_sites"]) == len(want_sites) and (WHICH.startswith("xref") or (f["avcam_stock"] == 101 and len(f["libmpr_sites"]) == expected()["lm_sites"] == 6)),
               "normal run: every coprocessor site, 6 libmpr (4 rows, 2 MP4 header heights) and 101 av-cam sites are reported")
         check(sum(1 for x in f["coprocessor_sites"] if x["name"].startswith("rawbuf_") and x["state"] == "STOCK") == 4,
               "normal run: the raw write buffer's four memory-manager words are reported STOCK")
-        if WHICH == "dump":
+        if WHICH == "dump":                    # the xref builds copy no fixed pages
             d = f.get("decoded", {})
             check(d.get("matrix_equals_file") and len(d.get("stored_records", {})) == 32 and d.get("size_table"), "dump: the pages decode (matrix, 32 records, size table)")
             check(d.get("raw_write_buffer_words") == {"stock": 4, "new": 0, "other": 0}, "dump: the raw write buffer's words decode as stock")
@@ -691,6 +726,7 @@ def report(session, facts, which):
     lines += ["  " + ln for ln in f["libmpr_sites"]] + ["  " + ln for ln in f["avcam_guards"]]
     lines.append("  av-cam.bin sites: %d stock, %d target, %d other" % (f["avcam_stock"], f["avcam_target"], f["avcam_other"]))
     lines += ["problem lines:"] + ["  " + ln for ln in f["problem_lines"]] if f["problem_lines"] else ["no problem lines"]
+    lines += f.get("xref_lines", [])
     cs = camera_state(f)                          # v5
     lines[3:3] = ["camera set to: %s" % cs["family"], "sensor side in place: %s" % cs["sensor_side"], "output size (4K class): %s" % output_size(f),
                   "encoder side: %s" % cs["encoder_side"]] + \
@@ -830,6 +866,8 @@ def main():
     ap.add_argument("--selftest", action="store_true")
     ap.add_argument("--go", action="store_true")
     ap.add_argument("--remove-only", action="store_true")
+    ap.add_argument("--fetch-result", action="store_true", help="read-only helpers: no upload; read the result an earlier run left on the RAM disk (a write that got no "
+                    "answer), and delete this script's library if it is still on the service partition")
     ap.add_argument("--clear-result", metavar="SHA256", help="first delete the result file of an earlier run from the RAM disk, only if its SHA-256 is this")
     ap.add_argument("--firmware-shown")
     ap.add_argument("--writes-memory", action="store_true", help="needed for a write step (%s): it changes the running camera's memory" % ", ".join(WRITE_STEPS))
@@ -853,8 +891,10 @@ def main():
     # A result left on the RAM disk by the run before stops a new run. Without --clear-result the newest result saved on this PC is named: the
     # runner deletes the camera's file only if its SHA-256 is that one, i.e. only a result already here.
     R.CLEAR_SHA = a.clear_result or last_saved_sha()
-    body = R.body_remove_only if a.remove_only else R.body_run
-    with c.Session("remove_only" if a.remove_only else "fx2_%s" % a.which, test="CT6") as session:
+    if a.fetch_result and a.which in WRITE_STEPS:
+        raise SystemExit("--fetch-result is for the read-only helpers. Nothing was sent.")
+    body = R.body_remove_only if a.remove_only else body_fetch if a.fetch_result else R.body_run
+    with c.Session("remove_only" if a.remove_only else "fx2_%s%s" % (a.which, "_fetch" if a.fetch_result else ""), test="CT6") as session:
         session.results.update(firmware_shown_on_camera=a.firmware_shown, model=MODEL, which=a.which, library_sha256=PINS[a.which][1],
                                pc={"platform": platform.platform(), "python": sys.version.split()[0]})
         inner = service.connect(session)
