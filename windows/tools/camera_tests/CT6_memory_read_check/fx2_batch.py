@@ -64,12 +64,19 @@ def what(step):
     return F.WRITE_STEPS[step][2] if step in F.WRITE_STEPS else "the read-only check (fx2read): identity, every site stock or target, nothing written"
 
 
+FAMILY = None      # live runs: "NTSC" or "PAL", the family the plan's sensor-side step was picked for (set in main)
+
+
 def step_ok(step, facts):
     s3 = facts["s3"]
     if step in F.WRITE_STEPS:
         return s3["ok"], s3["outcome"]
     ready = (facts.get("header_ok") and s3.get("ready") and not s3.get("identity_differs") and s3.get("identity_same", 0) > 0
              and any(v in s3.get("header", "") for v in ("fx2read_v1 ", "fx2read_v2 ", "fx2read_v3 ", "fx2read_v4 ", "fx2read_v5 ")))
+    if ready and FAMILY:
+        fam = F.camera_state(s3)["family"].split(" ")[0]
+        if fam in ("NTSC", "PAL") and fam != FAMILY:
+            return False, "the check reads this camera as %s, but the plan has the %s steps" % (fam, FAMILY)
     return bool(ready), s3.get("verdict", "no verdict")
 
 
@@ -204,8 +211,18 @@ def main():
     ap.add_argument("--go", action="store_true")
     ap.add_argument("--firmware-shown")
     ap.add_argument("--writes-flash", action="store_true", help="needed for a plan with a start-up loader step that can write the camera's flash")
+    ap.add_argument("--ntsc", action="store_true", help="the camera is set to NTSC: the plans' own sensor-side steps (L5 / H5 / K5)")
+    ap.add_argument("--pal", action="store_true", help="the camera is set to PAL: the PAL sensor-side steps (Q5 / P5 / J5, mode 0x880)")
     a = ap.parse_args()
-    plan = PLANS[a.plan]
+    import fx2_apply as A
+    global FAMILY
+    # A start-up loader plan has no sensor-side step of its own to swap: its helper's plan names the family (og2560 / og2560pal), and that
+    # helper's steps refuse on a camera of the other family. So no family is chosen (and none is asked for) for a loader plan.
+    loader = a.plan.startswith("loader_")
+    if loader and (a.ntsc or a.pal):
+        raise SystemExit("A start-up loader plan takes no --ntsc / --pal: the family is in the plan's name (loader_..._og2560 or ..._og2560pal). Nothing was sent.")
+    family = None if loader else A.choose_family(a, a.go and not a.dry_run)   # --ntsc / --pal, else the newest saved check, else asked (live)
+    plan = tuple(A.PAL_STEPS.get(s, s) for s in PLANS[a.plan]) if family == "PAL" else PLANS[a.plan]
     flash = [s for s in plan if s in F.LOADER_FLASH]
     libs = {}
     for step in plan:
@@ -213,7 +230,7 @@ def main():
             raise SystemExit("%s is not a step of this kit. Nothing was sent." % step)
         libs[step] = F.use(step)                       # the pinned build, or it stops here
     session, sent = offline_checks(plan, libs)
-    print("FX2 1.01, batch %s: %d steps in one connection: %s" % (a.plan, len(plan), " ".join(plan)))
+    print("FX2 1.01, batch %s (%s): %d steps in one connection: %s" % (a.plan, family or "start-up loader", len(plan), " ".join(plan)))
     for n, step in enumerate(plan, 1):
         print("  %d. %s  %s  (library %s...)" % (n, step, what(step), F.PINS[step][1][:16]))
     print("Offline: every library pinned, the kit's refusals and self-test passed for each, and the whole batch ran on the simulated camera "
@@ -227,7 +244,7 @@ def main():
         raise SystemExit("This plan can write the camera's flash: it needs --writes-flash as well. Nothing was sent.")
     if not a.go or a.firmware_shown != F.FIRMWARE:
         raise SystemExit("A live run needs --go and --firmware-shown %s. Nothing was sent." % F.FIRMWARE)
-    import fx2_apply as A
+    FAMILY = family                                    # the in-connection check must read the camera as this family (None: a loader plan)
     if plan[0] != "check" and a.plan not in NO_CHECK_PLANS:   # without the in-connection check, the kit's rule: a saved READY check first
         chk = A.last_check()
         if chk is None or not chk[1]:
@@ -241,7 +258,7 @@ def main():
     R.KNOWN_LIBS.update({pin[1]: pin[0] for pin in F.PINS.values()})
     first_clear = F.last_saved_sha()
     with c.Session("fx2_batch_%s" % a.plan, test="CT6") as session:
-        session.results.update(firmware_shown_on_camera=a.firmware_shown, model=F.MODEL, which="batch_" + a.plan, plan=list(plan),
+        session.results.update(firmware_shown_on_camera=a.firmware_shown, model=F.MODEL, which="batch_" + a.plan, plan=list(plan), family=family,
                                libraries={s: F.PINS[s][1] for s in plan},
                                pc={"platform": platform.platform(), "python": sys.version.split()[0]})
         F.use(plan[0])
