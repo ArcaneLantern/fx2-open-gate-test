@@ -16,7 +16,8 @@ steps = {k: v for k, v in pins["steps"].items() if k.startswith("W")}
 lines = [BEGIN,
          '# The start-up loader, build %s ("sdboot": helper_fx2/sdboot/, modding/FX2_SDBOOT.md). W1..W%d bring its files to the camera\'s RAM disk'
          % (pins["build"], len(pins["stage_order"])),
-         "# (/tmp_wbshd, nothing on flash), W50..W53 choose what its helper applies (RAM copy), W30 runs the helper once from RAM, W42 reads its status;",
+         "# (/tmp_wbshd, nothing on flash), W50..W53 choose what its helper applies (RAM copy), W30 runs the helper once from RAM, W42 reads its status,",
+         "# W43 the whole result of every step of the helper's last run (for the session folder);",
          "# W40 INSTALLS it on flash (/etc/fx2boot and /etc/ld.so.preload) and W41 removes it. A step in LOADER_FLASH can write the camera's flash:",
          "# it needs --writes-flash besides --writes-memory. A battery change does not undo a flash step; W41 does.",
          "LOADER_STEPS = {"]

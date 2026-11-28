@@ -1,4 +1,4 @@
-emu_fx2boot.py, build fx2boot_v1, 2026-11-28 00:54:19
+emu_fx2boot.py, build fx2boot_v2, 2026-11-28 11:57:23
 PASS  sandbox: the camera's busybox and loader run (45002_02.2025101101 | BusyBox v1.34.1 (2024-07-17 18:09:30 JST) multi-call binary.)
 PASS  W42 status on a stock camera: nothing installed, nothing on the RAM disk; flash untouched
 PASS  W40 install with no files on the RAM disk: refused, flash untouched
@@ -44,7 +44,7 @@ PASS  power-on 1 (after a battery change), plan og2560: L13, H5, L16, X19, S16 e
 PASS  coprocessor memory: all 962 site bytes of L13+H5+L16+S16 hold the designs' values; the transfer log shows exactly the 898 that differ from stock changed, stock to new, and no malformed request
 PASS  encoder side, from outside the application: av-cam.bin holds its 101 sites and the application's libmpr.so its 6, every other byte unchanged
 PASS  the helper wrote no flash
-PASS  X19 found the camera application by name (process 2447519) and its libmpr.so mapping (0x766a17c00000) in /proc
+PASS  X19 found the camera application by name (process 2460192) and its libmpr.so mapping (0x78ba06400000) in /proc
 PASS  the camera's loader took fx2cp.so where the step library asks for libsencore.so: the camera's own /usr/lib/libsencore.so (present) was not opened
 PASS  the same power-on, another program started: no second helper run
 PASS  power-on 2 (switch off and on, battery in: coprocessor memory stock again, encoder side still in place): four steps DONE, X19 NOTHING TO DO
@@ -69,12 +69,21 @@ PASS  plan squeeze on a camera whose encoder side was still in place: X20 puts i
 PASS  installed with plan check (read-only)
 PASS  plan check: both steps ran; no transfer towards the coprocessor, av-cam.bin and the application's libmpr.so untouched
 PASS  X18, from outside the application, on a stock camera: READY (every guard as in the file, every site stock)
-PASS  the kit's check library, through fx2cp.so: 58 coprocessor reads, result complete
+PASS  X0, the kit's check built for outside: it found the camera application (process 2461299), took ITS list of mappings, and made 58 coprocessor reads through fx2cp.so
+PASS  X0 on a stock camera, from outside: VERDICT READY, 0 places not as the 1.01 update (the kit's own check counts 9 there: 3 files and 6 libmpr.so sites it looks for in its own process)
+PASS  X0 from outside states what the kit's check states INSIDE the application for the same camera: all 172 lines equal (code pages, sites, files, libmpr.so, av-cam.bin, verdict)
+PASS  the helper's log says what X0 read, in 8 lines: the buffer the memory manager gave, code pages, sites, files, libmpr.so, av-cam.bin, the count
+PASS  W42 status after it: X0's buffer line, its count and its verdict, and the helper's log with the lines above
+PASS  W43 report: the log and the whole of both results (21114 + 15025 bytes), every line behind '| '; its one outcome line is its own
+PASS  the read-only plan, W42 and W43 wrote no flash
 PASS  X18 on a camera whose encoder side is applied: APPLIED
+PASS  X0 there (libmpr.so on disk stock, the application's memory changed): VERDICT READY, its 6 libmpr.so sites and av-cam.bin's 101 read TARGET, through the memory file and /dev/mem
+PASS  X0 on a PAL-set model camera (a real PAL FX2's stored records): VERDICT READY, all 173 lines as the kit's check states them inside the application
+PASS  the memory manager refuses the buffer: the log names it (buffer allocation failed, fx2cp's own line, 0 code pages), the files and libmpr.so are still read, verdict NOT READY
 PASS  two processes named im.elf: the helper stops, nothing is read or written
 PASS  W30 run now (RAM copy, loader not installed): the helper ran plan og2560 at once, every step DONE
 PASS  W30's own result file (which the kit leaves in place) was set aside for the run and is back unchanged
 PASS  coprocessor memory (run now): all 962 site bytes of L13+H5+L16+S16 hold the designs' values; the transfer log shows exactly the 898 that differ from stock changed, stock to new, and no malformed request
 PASS  run now: encoder side as designed; flash untouched
 PASS  W42 status afterwards shows the helper's log and each step's outcome line
-ALL PASS (78 checks)
+ALL PASS (87 checks)

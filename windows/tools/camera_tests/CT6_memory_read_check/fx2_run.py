@@ -124,16 +124,17 @@ WRITE_STEPS = {
     "A17": ("libJit_fx2_A17.so", "f190f3c211b501d1ea8291439d2092b254c5be7a4be8844450eaafe1e0ac4764", "LOCAL: put back S16's 1.3x shape (1.95:1)"),
 }
 # --- loader steps: begin (helper_fx2/sdboot/update_runner.py writes this block)
-# The start-up loader, build fx2boot_v1 ("sdboot": helper_fx2/sdboot/, modding/FX2_SDBOOT.md). W1..W14 bring its files to the camera's RAM disk
-# (/tmp_wbshd, nothing on flash), W50..W53 choose what its helper applies (RAM copy), W30 runs the helper once from RAM, W42 reads its status;
+# The start-up loader, build fx2boot_v2 ("sdboot": helper_fx2/sdboot/, modding/FX2_SDBOOT.md). W1..W14 bring its files to the camera's RAM disk
+# (/tmp_wbshd, nothing on flash), W50..W53 choose what its helper applies (RAM copy), W30 runs the helper once from RAM, W42 reads its status,
+# W43 the whole result of every step of the helper's last run (for the session folder);
 # W40 INSTALLS it on flash (/etc/fx2boot and /etc/ld.so.preload) and W41 removes it. A step in LOADER_FLASH can write the camera's flash:
 # it needs --writes-flash besides --writes-memory. A battery change does not undo a flash step; W41 does.
 LOADER_STEPS = {
-    "W1": ("sdboot/libJit_fx2_W1.so", "e69ddf9843d156c13f5f96f3f3585849a1e3fe8a971e51580287a1c6abf169e6", "RAM only: bring fx2boot.sh (7306 bytes) of the start-up loader to the camera's RAM disk"),
+    "W1": ("sdboot/libJit_fx2_W1.so", "54c225f87d908ff4a8b6c03c07be02d4aba60eff2634d2223e2c8d853e78d428", "RAM only: bring fx2boot.sh (9042 bytes) of the start-up loader to the camera's RAM disk"),
     "W2": ("sdboot/libJit_fx2_W2.so", "fd2cd066fa8106cf85f2827fd68cc3002e1cf2bb7eaee42dd8b59e8b87d876d7", "RAM only: bring fx2cp.so (6136 bytes) of the start-up loader to the camera's RAM disk"),
-    "W3": ("sdboot/libJit_fx2_W3.so", "bdf870f87df5606de3637e6cd2ed401576819403fd2d9b0a121094e755c0344a", "RAM only: bring fx2hook.so (7552 bytes) of the start-up loader to the camera's RAM disk"),
-    "W4": ("sdboot/libJit_fx2_W4.so", "34d5fff359f8be234735ec8272e99b36c4678cd86e6b7f50bc35e2ec1b713d96", "RAM only: bring libJit_fx2_check.so (62760 bytes, piece 1 of 2) of the start-up loader to the camera's RAM disk"),
-    "W5": ("sdboot/libJit_fx2_W5.so", "cabf32aabdd262c5f6161a49f031d6c0ee16fbe7b8681439c14f681a4c691159", "RAM only: bring libJit_fx2_check.so (62760 bytes, piece 2 of 2) of the start-up loader to the camera's RAM disk"),
+    "W3": ("sdboot/libJit_fx2_W3.so", "0d1f944903642e7941874c6b7d4f18cc985bf91be55927ce25003593495f2942", "RAM only: bring fx2hook.so (7552 bytes) of the start-up loader to the camera's RAM disk"),
+    "W4": ("sdboot/libJit_fx2_W4.so", "e588076df171b6c37b701daccde0bc557819d8d66205848bea3e7bd757e6ceeb", "RAM only: bring libJit_fx2_X0.so (66064 bytes, piece 1 of 2) of the start-up loader to the camera's RAM disk"),
+    "W5": ("sdboot/libJit_fx2_W5.so", "a7fe009eeba09ac211cc79b944025733d8b260677aa8b647f8f3a3a2ef1fbcc9", "RAM only: bring libJit_fx2_X0.so (66064 bytes, piece 2 of 2) of the start-up loader to the camera's RAM disk"),
     "W6": ("sdboot/libJit_fx2_W6.so", "dc5360657499384a9885faf6678b801f26be9c5af66f940980eb1f58ea7bf963", "RAM only: bring libJit_fx2_X18.so (27280 bytes) of the start-up loader to the camera's RAM disk"),
     "W7": ("sdboot/libJit_fx2_W7.so", "165cec4c12de773203e8cbb787c68b7c764e65bca244dc07ace2490cd88d70b0", "RAM only: bring libJit_fx2_L13.so (19832 bytes) of the start-up loader to the camera's RAM disk"),
     "W8": ("sdboot/libJit_fx2_W8.so", "3f490ae8df4800490e010e6b609027efd0ba4ff1e2b5e7d36379ece6b95cd85d", "RAM only: bring libJit_fx2_H5.so (31680 bytes) of the start-up loader to the camera's RAM disk"),
@@ -143,10 +144,11 @@ LOADER_STEPS = {
     "W12": ("sdboot/libJit_fx2_W12.so", "4d7bb1b544f314681eb4d2f55514febbccebfd1a8744eb58890a76c4ad0978c2", "RAM only: bring libJit_fx2_X19.so (28392 bytes) of the start-up loader to the camera's RAM disk"),
     "W13": ("sdboot/libJit_fx2_W13.so", "b7a74bc39d332925e158b3dda3b213aba41405f365b5e2f25d0dd6e1cba74f84", "RAM only: bring libJit_fx2_X20.so (28400 bytes) of the start-up loader to the camera's RAM disk"),
     "W14": ("sdboot/libJit_fx2_W14.so", "ebfc898327cec057868120a1c9a3c4726de175c0af0df4c572abdbb0b0cef2d9", "RAM only: bring libJit_fx2_S16.so (17368 bytes) of the start-up loader to the camera's RAM disk"),
-    "W30": ("sdboot/libJit_fx2_W30.so", "2a7de5f5e13ee2cb0540f09f4d473b12262802b4c0cfb45b45e39589a65342fb", "RAM only: start the start-up loader's helper once, now, from the RAM copy (the chosen plan); no flash is written"),
-    "W40": ("sdboot/libJit_fx2_W40.so", "d7e46bb049c5b8ea90257f12dec8f80722a3afcfcca7317560742d08be6e5a82", "FLASH: install the start-up loader (copies its checked files to /etc/fx2boot and writes /etc/ld.so.preload)"),
+    "W30": ("sdboot/libJit_fx2_W30.so", "54407e15009cbe6e6998ad10127281b0e75024696d569ae25af41d3f8528b8cd", "RAM only: start the start-up loader's helper once, now, from the RAM copy (the chosen plan); no flash is written"),
+    "W40": ("sdboot/libJit_fx2_W40.so", "de3fc5579ff4a9ed0b40c9e2cf6ae2f6d648d7a68060eeb0c1198a9425ba9aea", "FLASH: install the start-up loader (copies its checked files to /etc/fx2boot and writes /etc/ld.so.preload)"),
     "W41": ("sdboot/libJit_fx2_W41.so", "467c00c9b174c70df6f18e3e5fa601fbfd5e72a624a6574b19a178c85eb234db", "FLASH: uninstall the start-up loader (removes /etc/ld.so.preload first, then /etc/fx2boot and earlier research builds' files)"),
-    "W42": ("sdboot/libJit_fx2_W42.so", "72078b9f964a5612a06161aec8ae256bcf00aa774c4ef2fc1db1c95bc10e6944", "read-only: status of the start-up loader (what is installed, the plan, the helper's last report)"),
+    "W42": ("sdboot/libJit_fx2_W42.so", "dd387b5db3f462bc429b60e48cf672527a2308f418e9bc4c2533c7885e52f285", "read-only: status of the start-up loader (what is installed, the plan, the helper's last report)"),
+    "W43": ("sdboot/libJit_fx2_W43.so", "53e99f46202f10c9878170356aa7ca66efc23c2a0be24f32231447fb400e9629", "read-only: the whole result of every step of the helper's last run, and its log (for the session folder)"),
     "W50": ("sdboot/libJit_fx2_W50.so", "355b6dfc13e96e5bb18c30287cd33d0b3b1c0d7cfdb15b1e0afed0b27c016e84", "RAM only: choose the helper's plan: check (read-only: reads the coprocessor and encoder sites from outside the camera application)"),
     "W51": ("sdboot/libJit_fx2_W51.so", "064bc0b5527deb2a83fd5a90d71b634bbc8f3f83aa98ebc1ae9920e563dbf0c8", "RAM only: choose the helper's plan: og2560 (the 3840x2560 open gate, 23.98p/24p: L13 H5 L16 X19 S16)"),
     "W52": ("sdboot/libJit_fx2_W52.so", "444b5f00598a8f042161677d6d36cfed62b4c8b36d510418c15519e42077ee1d", "RAM only: choose the helper's plan: og2560pal (the 3840x2560 open gate on a PAL-set camera, 25p: L13 P5 L16 X19 S16)"),
@@ -157,7 +159,7 @@ LOADER_STEPS = {
 LOADER_STAGE = ("W1", "W2", "W3", "W4", "W5", "W6", "W7", "W8", "W9", "W10", "W11", "W12", "W13", "W14")
 LOADER_PLANS = {"check": "W50", "og2560": "W51", "og2560pal": "W52", "squeeze": "W53"}                                    # plan name: the step that chooses it
 LOADER_FLASH = ("W40", "W41", "W58", "W59")
-LOADER_BUILD = "fx2boot_v1"
+LOADER_BUILD = "fx2boot_v2"
 # --- loader steps: end
 WRITE_STEPS.update(LOADER_STEPS)
 PINS.update({k: v[:2] for k, v in WRITE_STEPS.items()})
@@ -181,8 +183,11 @@ def write_result(data):
             "complete": any(ln.startswith("== done") for ln in lines[-3:]),
             "s3": {"step": WHICH, "what": WRITE_STEPS[WHICH][2], "outcome": outcome, "ok": outcome in ("DONE", "NOTHING TO DO"),
                    "outcome_line": pick("DONE: ") or pick("NOTHING TO DO") or pick("NOT DONE: ") or pick("!! UNDO INCOMPLETE") or pick("UNDO INCOMPLETE"), "problem_lines": problems,
-                   # a loader step's result is its report (what is installed, the helper's log): it is shown whole, printable characters only
-                   "text": [ln for ln in "".join(ch if ch == "\n" or " " <= ch <= "~" else "." for ch in text[:20000]).split("\n")[2:] if ln] if WHICH in LOADER_STEPS else None}}
+                   # a loader step's result is its report (what is installed, the helper's log): it is shown whole, printable characters only,
+                   # up to a line that starts with "==== " (W43: what follows is the steps' whole results, kept in the session folder's result file)
+                   "text": [ln for ln in "".join(ch if ch == "\n" or " " <= ch <= "~" else "." for ch in text.split("\n==== ")[0][:20000]).split("\n")[2:] if ln]
+                           + (["(the rest of this report, %d bytes in all, is in the session folder: the step's readcheck_result.txt)" % len(data)] if "\n==== " in text else [])
+                           if WHICH in LOADER_STEPS else None}}
 
 
 def reference():

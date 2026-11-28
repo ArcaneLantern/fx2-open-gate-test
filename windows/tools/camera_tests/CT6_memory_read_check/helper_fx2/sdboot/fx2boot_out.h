@@ -39,6 +39,13 @@ __attribute__((unused)) static void puthex(const u8 *b, u64 n)
     char t[3]; t[2] = 0;
     for (u64 i = 0; i < n; i++) { t[0] = d[b[i] >> 4]; t[1] = d[b[i] & 15]; put(t); }
 }
+/* `n` bytes as they are, in one write. */
+__attribute__((unused)) static void putblock(const u8 *b, u64 n)
+{
+    if (out_fd < 0 || !n || out_total + n > OUT_CAP) return;
+    if (sys_write(out_fd, b, n) != (i64)n) { sys_close(out_fd); out_fd = -1; return; }
+    out_total += n;
+}
 /* Text from the camera, made safe to print: printable ASCII and line ends only. */
 __attribute__((unused)) static void puttext(const u8 *b, u64 n)
 {

@@ -50,13 +50,14 @@ PLANS = {
 #                     installed. loader_try_check only READS (the test to run first); the others apply that plan as the kit's steps do.
 #   loader_install_*  FLASH: the files are copied to /etc/fx2boot and /etc/ld.so.preload is written. Needs --writes-flash.
 #   loader_status     read-only; loader_uninstall, loader_off, loader_on: FLASH (they need --writes-flash too).
+#   loader_report     read-only: the whole result of every step of the helper's last run, and its log, into the session folder.
 # The read-only check runs first in the plans that bring files or install; status, off, on and uninstall need no check: the way back must
 # not depend on the camera's state.
 _STAGE = ("check",) + tuple(F.LOADER_STAGE)
 PLANS.update({"loader_try_%s" % plan: _STAGE + (step, "W30") for plan, step in F.LOADER_PLANS.items()})
 PLANS.update({"loader_install_%s" % plan: _STAGE + (step, "W40") for plan, step in F.LOADER_PLANS.items() if plan != "check"})
-PLANS.update({"loader_status": ("W42",), "loader_uninstall": ("W41",), "loader_off": ("W58",), "loader_on": ("W59",)})
-NO_CHECK_PLANS = ("loader_status", "loader_uninstall", "loader_off", "loader_on")
+PLANS.update({"loader_status": ("W42",), "loader_report": ("W43",), "loader_uninstall": ("W41",), "loader_off": ("W58",), "loader_on": ("W59",)})
+NO_CHECK_PLANS = ("loader_status", "loader_report", "loader_uninstall", "loader_off", "loader_on")
 
 
 def what(step):

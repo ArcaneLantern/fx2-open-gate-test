@@ -7,13 +7,14 @@
 It needs Linux (WSL), qemu-aarch64 and debugfs; no root. What is real and what is a stand-in:
   REAL   the camera's files from the 1.01 update: /lib/ld-2.25.so, libc, /bin/busybox and its applets, /usr/bin/startBTCore.sh, /version.txt,
          libmpr.so, av-cam.bin, cpapp-b.bin; the kit's step libraries (byte for byte the pinned files); every file this folder builds
-         (fx2hook.so, fx2cp.so, fx2boot.sh, X18/X19, the W steps), unchanged.
+         (fx2hook.so, fx2cp.so, fx2boot.sh, X0, X18/X19/X20, the W steps), unchanged.
   REAL   the Linux kernel underneath for files, processes, pipes, /proc/<pid>/maps and /proc/<pid>/mem (qemu-aarch64 runs each AArch64
          program as a Linux process; a private binfmt_misc entry inside a user namespace makes the shell's own exec calls work).
-  STAND-IN  the camera application: fake_im.py, a process named im.elf that maps libmpr.so
+  STAND-IN  the camera application: fake_im.py, a process named im.elf that maps libmpr.so, libsencore.so and libJiritsu.so (the camera's files)
   STAND-IN  the camera's libosal_uipc.so (model_osal.c) and the kernel's /dev/pcidma transfer (model_kernel.c); coprocessor memory is a file
          holding cpapp-b.bin and the model camera of the kit's own emulation (prepare_emu.py); /dev/mem is a file with av-cam.bin at its
-         physical address; /sys/kernel/debug/suspend_stats is a file the test writes; /etc is a folder (on the camera: a FAT partition).
+         physical address; /sys/kernel/debug/suspend_stats is a file the test writes; /etc is a folder (on the camera: a FAT partition);
+         /proc/cmdline is the kit's model command line (it names the memory reserved for av-cam.bin, as the camera's does).
   NOT TESTED HERE  anything about the camera itself: whether its message library works from a process of its own, when the coprocessor is
          ready after power-on, the FAT partition's behaviour, timing.
 Writes evidence/fx2/sdboot_emu.txt (every check) when run from the map.
@@ -51,6 +52,12 @@ def ok(cond, text):
     return bool(cond)
 
 
+def show(*texts):
+    if "--debug" in sys.argv:
+        for x in texts:
+            print("DEBUG| " + str(x).replace("\n", "\nDEBUG| "), flush=True)
+
+
 def sh(cmd, **kw):
     return subprocess.run(cmd, capture_output=True, text=True, **kw)
 
@@ -76,6 +83,8 @@ def build_sysroot():
     shutil.copy(DEV / "nflasha15/bin/startBTCore.sh", SYS / "usr/bin/startBTCore.sh")
     shutil.copy(DEV / "nflasha15/lib/libmpr.so", SYS / "usr/lib/libmpr.so")
     shutil.copy(DEV / "nflasha15/lib/libsencore.so", SYS / "usr/lib/libsencore.so")       # the camera's own: present, and must NOT get loaded
+    shutil.copy(DEV / "nflasha15/lib/libJiritsu.so", SYS / "usr/lib/libJiritsu.so")
+    (SYS / "emu/cmdline").write_text(json.loads((HERE / "out/model_check.json").read_text())["cmdline"] + "\n")
     shutil.copy(HERE / "out/libosal_uipc.so", SYS / "usr/lib/libosal_uipc.so")            # stand-in
     shutil.copy(HERE / "out/model_kernel.so", SYS / "emu/model_kernel.so")                # stand-in
     # the Bluetooth daemon the camera's script starts: here a script that only stays alive for a moment
@@ -107,6 +116,9 @@ def enter_sandbox():
         r = sh(["mount", "--rbind" if src == "/proc" else "--bind", src, str(dst)])
         if r.returncode:
             raise SystemExit("STOP: %s could not be bound into the sandbox: %s" % (src, r.stderr))
+    r = sh(["mount", "--bind", str(SYS / "emu/cmdline"), str(SYS / "proc/cmdline")])
+    if r.returncode:
+        raise SystemExit("STOP: the model kernel command line could not be bound over /proc/cmdline in the sandbox: " + r.stderr)
 
 
 def cam(cmd, env=None, timeout=120, stdin=None):
@@ -120,7 +132,7 @@ def reset_camera(files_too=True):
     """A camera as the firmware ships it: nothing in /etc, an empty RAM disk, no logs of the stand-ins."""
     for d in ("etc", "tmp_wbshd", "tmp_bt", "emu", "tmp", "setting/mode"):
         for p in (SYS / d).iterdir():
-            if d == "emu" and p.name in ("model_kernel.so", "cpram.base", "devmem.base"):
+            if d == "emu" and p.name in ("model_kernel.so", "cpram.base", "devmem.base", "cmdline"):
                 continue
             shutil.rmtree(p) if p.is_dir() else p.unlink()
     (SYS / "tmp/jiritsu").mkdir(parents=True, exist_ok=True)
@@ -242,9 +254,15 @@ def av_now(n):
 class App:
     """The stand-in camera application."""
 
-    def __init__(self, lm_bytes, name="im.elf"):
-        (SYS / "usr/lib/libmpr.so").write_bytes(lm_bytes)
-        self.p = subprocess.Popen([sys.executable, str(HERE / "fake_im.py"), str(SYS / "usr/lib/libmpr.so"), name], stdout=subprocess.PIPE, text=True)
+    def __init__(self, lm_bytes, name="im.elf", file_bytes=None):
+        """file_bytes: what libmpr.so on disk holds when the application's memory (lm_bytes) differs from it (an applied encoder side)."""
+        (SYS / "usr/lib/libmpr.so").write_bytes(file_bytes or lm_bytes)
+        env = dict(os.environ)
+        if file_bytes:
+            (SYS / "emu/lm_memory").write_bytes(lm_bytes)
+            env["FAKE_IM_MEMORY"] = str(SYS / "emu/lm_memory")
+        self.p = subprocess.Popen([sys.executable, str(HERE / "fake_im.py"), str(SYS / "usr/lib/libmpr.so"), name,
+                                   str(SYS / "usr/lib/libsencore.so"), str(SYS / "usr/lib/libJiritsu.so")], stdout=subprocess.PIPE, text=True, env=env)
         pid, addr, size = self.p.stdout.readline().split()
         self.pid, self.addr, self.size = int(pid), int(addr, 16), int(size)
 
@@ -437,7 +455,7 @@ def test_hook(pins):
     time.sleep(2)
     log = (SYS / "tmp_wbshd/fx2boot.log").read_text() if (SYS / "tmp_wbshd/fx2boot.log").is_file() else ""
     marks = sorted(p.name for p in (SYS / "tmp_wbshd").iterdir() if p.name.startswith("fx2boot.g"))
-    ok(out == base_out and not err and len(inits) >= 5 and marks == ["fx2boot.g1"] and log.count("START") == 1 and "fx2boot[1]: plan check: check X18" in log,
+    ok(out == base_out and not err and len(inits) >= 5 and marks == ["fx2boot.g1"] and log.count("START") == 1 and "fx2boot[1]: plan check: X0 X18" in log,
        "power-on 1: the hook ran in %d programs, ONE of them started the helper once (mark fx2boot.g1, one START line); the script's result is the baseline's (%.1f s against %.1f s)" % (len(inits), t, base_t))
     for p in (SYS / "tmp").glob("ld.*"):
         p.unlink()
@@ -662,30 +680,115 @@ def test_helper(pins):
        "plan squeeze on a camera whose encoder side was still in place: X20 puts it back first, then L13, L5, S16")
     app.stop()
 
-    # D9: the read-only plan
+    # D9: the read-only plan: X0 (the kit's check built for outside the application) and X18
+    def camera_check(model, av_bytes=av, lm_bytes=lm):
+        """The kit's own model camera for its check: the image and the RAM blocks of helper_fx2/emu_fx2.py, in the model's order. The
+        application's memory holds lm_bytes; libmpr.so on disk is always the firmware's file, as on a camera."""
+        assert model["image_sha256"] == sha(image)
+        make_cpram({}, image)
+        with open(SYS / "emu/cpram.bin", "r+b") as f:
+            for a_, h in model["ram"]:
+                f.seek(int(a_, 16))
+                f.write(bytes.fromhex(h))
+        make_devmem(av_bytes)
+        return App(lm_bytes, file_bytes=lm if lm_bytes != lm else None)
+
+    def facts(text):
+        """The lines of a check result that state what the camera holds, without the addresses a mapping happens to have."""
+        out = []
+        for ln in text.split("\n"):
+            if ln.startswith(("page ", "site ", "other ", "guard ", "av ", "  bytes ", "places not", "VERDICT")):
+                out.append(ln)
+            elif ln.startswith("lm "):
+                out.append(ln.split(" at ")[0] + " " + ln.split(" bytes ", 1)[-1])
+        return out
+
+    def said(log, n):
+        return [ln.split("]: ", 1)[1] for ln in log.split("\n") if "fx2boot[%s]: X0: " % n in ln]
+
+    def result(name):
+        p = SYS / "tmp_wbshd" / name
+        return p.read_text(errors="replace") if p.is_file() else ""
+
+    chk = json.loads((HERE / "out/model_check.json").read_text())
+    chk_pal = json.loads((HERE / "out/model_check_pal.json").read_text())
     ok(install("check"), "installed with plan check (read-only)")
-    app = camera(("L13", "H5", "L16", "S16"))
+    app = camera_check(chk)
     log = boot(1, "check")
-    c1 = (SYS / "tmp_wbshd/fx2boot_check.txt").read_text(errors="replace") if (SYS / "tmp_wbshd/fx2boot_check.txt").is_file() else ""
-    x18 = (SYS / "tmp_wbshd/fx2boot_X18.txt").read_text(errors="replace") if (SYS / "tmp_wbshd/fx2boot_X18.txt").is_file() else ""
+    c1, x18 = result("fx2boot_X0.txt"), result("fx2boot_X18.txt")
     ok("END: plan check, every step done" in log and not cp_writes() and av_now(len(av)) == av and app.memory() == lm and not bad_lines(),
        "plan check: both steps ran; no transfer towards the coprocessor, av-cam.bin and the application's libmpr.so untouched")
     ok("== level 18 verdict: READY: every guard is as in the file and every site holds the stock bytes" in x18,
        "X18, from outside the application, on a stock camera: READY (every guard as in the file, every site stock)")
     reads = [ln for ln in (SYS / "emu/pcidma.log").read_text().split("\n") if " read " in ln] if (SYS / "emu/pcidma.log").is_file() else []
-    ok(c1.startswith("fx2read fx2read_v5 check for ILME-FX2 1.01") and len(reads) > 5 and "== done" in c1, "the kit's check library, through fx2cp.so: %d coprocessor reads, result complete" % len(reads))
-    # the read-only encoder check on an applied camera
+    ok(c1.startswith("fx2read fx2read_v5 check for ILME-FX2 1.01; read-only\noutside build %s: " % pins["build"]) and "camera application: process %d\n" % app.pid in c1
+       and "== file /proc/%d/maps\n" % app.pid in c1 and "/usr/lib/libmpr.so" in c1 and len(reads) > 5 and c1.rstrip().endswith("== done"),
+       "X0, the kit's check built for outside: it found the camera application (process %d), took ITS list of mappings, and made %d coprocessor reads through fx2cp.so"
+       % (app.pid, len(reads)))
+    ok("VERDICT READY" in c1 and "places not as the 1.01 update or not read: 0" in c1 and "NOT MAPPED" not in c1 and "NOT READ" not in c1,
+       "X0 on a stock camera, from outside: VERDICT READY, 0 places not as the 1.01 update (the kit's own check counts 9 there: 3 files and 6 libmpr.so sites it looks for in its own process)")
+    want = facts(chk["kit_check_result"])
+    ok(facts(c1) == want and len(want) > 60,
+       "X0 from outside states what the kit's check states INSIDE the application for the same camera: all %d lines equal (code pages, sites, files, libmpr.so, av-cam.bin, verdict)" % len(want))
+    d = said(log, 1)
+    n = lambda pre, end: sum(1 for ln in c1.split("\n") if ln.startswith(pre) and ln.endswith(end))
+    ok(any(x.startswith("X0: read; VERDICT READY") for x in d)
+       and "X0: coprocessor buffer (memory manager, through fx2cp.so): buffer physical 0x%010x handle" % BUF_PHYS in "\n".join(d)
+       and "X0: coprocessor code pages: %d same, 0 differ" % n("page ", "SAME as the 1.01 update") in d
+       and any(x.startswith("X0: coprocessor sites: %d stock, 0 target, 0 test, 0 other, 0 not read, " % n("site ", "  STOCK")) for x in d)
+       and "X0: application files: 3 same, 0 differ, 0 not mapped" in d and "X0: libmpr.so sites: 6 stock, 0 target, 0 other, 0 not read" in d
+       and "X0: av-cam.bin: guards %d same, 0 differ; sites %d stock, 0 target, 0 other" % (n("guard ", "  SAME"), n("av ", "  STOCK")) in d
+       and "X0: places not as the 1.01 update or not read: 0" in d and n("page ", "SAME as the 1.01 update") >= 4 and n("site ", "  STOCK") > 20,
+       "the helper's log says what X0 read, in %d lines: the buffer the memory manager gave, code pages, sites, files, libmpr.so, av-cam.bin, the count" % len(d))
+    show("\n".join(d))
+    t, _ = kit_step("W42")
+    show(t[t.find("the helper's reports"):][:2500])
+    ok(outcome(t) == "DONE" and "fx2boot_X0.txt:\n    camera application: process %d\n" % app.pid in t and "    buffer physical 0x%010x handle" % BUF_PHYS in t
+       and "    VERDICT READY" in t and "X0: coprocessor sites: " in t,
+       "W42 status after it: X0's buffer line, its count and its verdict, and the helper's log with the lines above")
+    t, _ = kit_step("W43")
+    body = [ln for ln in t.split("\n")]
+    clean = lambda s: "".join(ch if " " <= ch <= "~" else "." for ch in s)
+    ok(outcome(t) == "DONE" and "==== fx2boot.log: " in t and "==== fx2boot_X0.txt: %d bytes\n" % len(c1.encode()) in t and "==== end of fx2boot_X18.txt" in t
+       and all(("| " + clean(ln)) in body for ln in c1.split("\n")[:-1]) and all(("| " + clean(ln)) in body for ln in x18.split("\n")[:-1])
+       and sum(1 for ln in body if ln.startswith(("DONE", "NOT DONE", "NOTHING", "!!", "UNDO"))) == 1 and body[-2].startswith("== done"),
+       "W43 report: the log and the whole of both results (%d + %d bytes), every line behind '| '; its one outcome line is its own" % (len(c1), len(x18)))
+    ok(tree("etc") == {**{"etc/fx2boot/": "dir", "etc/ld.so.preload": sha(PRELOAD_TEXT + b"/emu/model_kernel.so\n"), "etc/fx2boot/plan": sha(b"check")},
+                       **{"etc/fx2boot/" + n_: v["sha256"] for n_, v in pins["files"].items()}}, "the read-only plan, W42 and W43 wrote no flash")
+    # the read-only checks on a camera whose encoder side is applied
     app.stop()
-    app = camera(("L13", "H5", "L16", "S16"), av2, lm2)
+    app = camera_check(chk, av2, lm2)
     log = boot(2, "check")
-    x18 = (SYS / "tmp_wbshd/fx2boot_X18.txt").read_text(errors="replace")
+    c2, x18 = result("fx2boot_X0.txt"), result("fx2boot_X18.txt")
     ok("== level 18 verdict: APPLIED" in x18, "X18 on a camera whose encoder side is applied: APPLIED")
+    show("\n".join(said(log, 2)), "\n".join(ln for ln in c2.split("\n") if ln.startswith(("VERDICT", "places", "lm ", "!!"))), "av TARGET %d" % sum(1 for ln in c2.split("\n") if ln.startswith("av ") and ln.endswith("  TARGET")))
+    ok("VERDICT READY" in c2 and "X0: libmpr.so sites: 0 stock, 6 target, 0 other, 0 not read" in said(log, 2) and "X0: application files: 3 same, 0 differ, 0 not mapped" in said(log, 2) and app.memory() == lm2 and sum(1 for ln in c2.split("\n") if ln.startswith("av ") and ln.endswith("  TARGET")) == n_av,
+       "X0 there (libmpr.so on disk stock, the application's memory changed): VERDICT READY, its 6 libmpr.so sites and av-cam.bin's %d read TARGET, through the memory file and /dev/mem" % n_av)
+    app.stop()
+    # a PAL-set camera (the first camera this ran on is one)
+    app = camera_check(chk_pal)
+    log = boot(3, "check")
+    c3 = result("fx2boot_X0.txt")
+    want = facts(chk_pal["kit_check_result"])
+    show("\n".join("- " + x for x in want if x not in facts(c3)), "\n".join("+ " + x for x in facts(c3) if x not in want), "\n".join(said(log, 3)))
+    ok("VERDICT READY" in c3 and facts(c3) == want and any(ln.startswith("other pal_stored_record ") for ln in c3.split("\n")),
+       "X0 on a PAL-set model camera (a real PAL FX2's stored records): VERDICT READY, all %d lines as the kit's check states them inside the application" % len(want))
+    # what the log shows when the camera's memory manager does not serve a process outside the application (the open question of issue 16)
+    (SYS / "emu/fail_dmm").write_bytes(b"")
+    log = boot(4, "check")
+    c4 = result("fx2boot_X0.txt")
+    d = said(log, 4)
+    (SYS / "emu/fail_dmm").unlink()
+    ok("X0: read; VERDICT NOT READY" in d and "X0: coprocessor buffer (memory manager, through fx2cp.so): !! buffer allocation failed; no coprocessor reads" in d
+       and "X0: coprocessor code pages: 0 same, 0 differ" in d and "X0: application files: 3 same, 0 differ, 0 not mapped" in d
+       and "fx2cp: " in log and "END: plan check, every step done" in log and "VERDICT NOT READY" in c4 and not cp_writes(),
+       "the memory manager refuses the buffer: the log names it (buffer allocation failed, fx2cp's own line, 0 code pages), the files and libmpr.so are still read, verdict NOT READY")
     app.stop()
 
     # D10: two processes named im.elf
     app = camera(("L13", "H5", "L16", "S16"))
     app2 = App(lm)
-    log = boot(3, "check")
+    log = boot(5, "check")
     ok("more than one process is named im.elf" in log and not cp_writes(), "two processes named im.elf: the helper stops, nothing is read or written")
     app2.stop()
     app.stop()

@@ -5,6 +5,8 @@
  *                   helper wrote at the last power-on. Writes nothing but the kit's result file (RAM).
  *   MODE_RUN        RAM only. Checks the files on the RAM disk against the build's list, then starts the helper from there once, now, as a
  *                   process of its own, with the chosen plan. This is the test of the helper WITHOUT any start-up hook and without flash.
+ *   MODE_REPORT     read-only. The helper's log and the whole result of every step of its last run, each line behind "| ", for the
+ *                   session folder (the status step shows the outcome lines only). Writes nothing but the kit's result file (RAM).
  *   MODE_PLAN       RAM only. Writes the plan's name (PLAN_NAME, a few bytes) to the RAM copy. The install step copies it to flash with the
  *                   files; an installed loader's plan is changed by bringing the files again, choosing, and installing again.
  *   MODE_OFF / _ON  makes / removes /etc/fx2boot/off: with it the start-up hook starts nothing. Flash, one empty file.
@@ -28,10 +30,15 @@
 #define MODE_ON 5
 #define MODE_INSTALL 6
 #define MODE_UNINSTALL 7
+#define MODE_REPORT 8
 #ifndef MODE
 #error "build with -DMODE=MODE_..."
 #endif
+#if MODE == MODE_REPORT
+#define MAX_FILE (704 * 1024)                 /* the check's own result is at most 640 KB */
+#else
 #define MAX_FILE (256 * 1024)
+#endif
 #define NR_FILES (sizeof fx2boot_files / sizeof fx2boot_files[0])
 #define NR_rt_sigprocmask 135
 #define CLONE_VM 0x100
@@ -108,7 +115,7 @@ MAYBE static int preload_state(int show)
     return 2;
 }
 
-#if MODE == MODE_STATUS || MODE == MODE_UNINSTALL
+#if MODE == MODE_STATUS || MODE == MODE_UNINSTALL || MODE == MODE_REPORT
 /* The names in a folder that `want` accepts (all, when it is 0), handed to `each` once the listing is closed, so `each` may remove them.
  * At most 64 names per pass; with `again` set the folder is listed anew while a pass was full (for removals: at most 16 passes).
  * Returns 0 when the folder cannot be read. */
@@ -137,7 +144,7 @@ static int for_names(const char *dir, int (*want)(const char *name), void (*each
     return 1;
 }
 static int starts(const char *s, const char *with) { for (u64 i = 0; with[i]; i++) if (s[i] != with[i]) return 0; return 1; }
-static int is_legacy(const char *name) { return starts(name, "fx2_") || starts(name, "fx2in_"); }      /* what earlier research builds left in /etc */
+MAYBE static int is_legacy(const char *name) { return starts(name, "fx2_") || starts(name, "fx2in_"); }      /* what earlier research builds left in /etc */
 #endif
 
 #if MODE == MODE_STATUS
@@ -157,7 +164,8 @@ static void outcome_of(const char *dir, const char *name)
         while (e < n && big[e] != '\n') e++;
         const char *l = (const char *)big + a;
         u64 len = (u64)(e - a);
-        if ((len > 5 && (starts(l, "DONE") || starts(l, "NOTHING") || starts(l, "NOT DONE") || starts(l, "!!") || starts(l, "UNDO") || starts(l, "== level")))) {
+        if ((len > 5 && (starts(l, "DONE") || starts(l, "NOTHING") || starts(l, "NOT DONE") || starts(l, "!!") || starts(l, "UNDO") || starts(l, "== level")
+                         || starts(l, "VERDICT") || starts(l, "places not") || starts(l, "buffer physical") || starts(l, "camera application:")))) {
             put("    "); puttext(big + a, len > 300 ? 300 : len); put("\n");
         }
         a = e + 1;
@@ -195,6 +203,7 @@ static void run(void)
     if (!for_names("/etc", is_legacy, legacy_name, 0)) put("  (the folder could not be listed)\n");
     put("the helper's reports of its last run (RAM):\n");
     for_names("/tmp_wbshd", is_report, outcome_of, 0);
+    put("(each result whole, and the whole log: the report step, W43)\n");
     put("the helper's log (RAM, the last 6000 characters):\n");
     i64 n = slurp(RUN_LOG, big, sizeof big);
     if (n == -1) put("  (none: the helper has not run since the battery was last out)\n");
@@ -202,6 +211,40 @@ static void run(void)
     put("the loader's names on the RAM disk:\n");
     for_names("/tmp_wbshd", is_ours, list_name, 0);
     put("DONE: status read; nothing was written\n");
+    out_end();
+}
+#endif
+
+#if MODE == MODE_REPORT
+static int is_report(const char *name) { return starts(name, "fx2boot_"); }
+/* One file whole, printable characters only, every line behind "| " so that no line of it reads as an outcome line of THIS step. */
+static void whole(const char *path, const char *name)
+{
+    i64 n = slurp(path, big, sizeof big);
+    put("==== "); put(name);
+    if (n == -1) { put(": absent\n"); return; }
+    u64 len = n == -2 ? sizeof big : (u64)n;
+    put(": "); putn((i64)len); put(n == -2 ? " bytes shown, the file is longer\n" : " bytes\n");
+    for (u64 a = 0; a < len; ) {
+        u64 e = a;
+        while (e < len && big[e] != '\n') { if (big[e] < 32 || big[e] >= 127) big[e] = '.'; e++; }
+        if (out_total + (e - a) + 4096 > OUT_CAP) { put("==== cut here: the report is full\n"); return; }
+        put("| "); putblock(big + a, e - a); put("\n");
+        a = e + 1;
+    }
+    put("==== end of "); put(name); put("\n");
+}
+static void whole_named(const char *dir, const char *name)
+{
+    if (join(path_a, sizeof path_a, dir, "/") && join(path_b, sizeof path_b, path_a, name)) whole(path_b, name);
+}
+
+static void run(void)
+{
+    if (!out_begin("the helper's last run in full, build " FX2BOOT_BUILD ": its log and every step's result; read-only")) return;
+    put("DONE: report read; nothing was written. What follows is for the session folder: the log, then each step's whole result, every line behind \"| \"\n");
+    whole(RUN_LOG, "fx2boot.log");
+    if (!for_names("/tmp_wbshd", is_report, whole_named, 0)) put("==== the RAM disk could not be listed\n");
     out_end();
 }
 #endif

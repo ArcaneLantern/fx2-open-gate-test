@@ -8,7 +8,8 @@
 # and writes the kit's result file. After each step the result is read as the kit's runner reads it; the first step that is not DONE
 # (or NOTHING TO DO) ends the run. Coprocessor transfers go through fx2cp.so, which stands in for the camera's libsencore.so there.
 # The encoder steps are the kit's levels 19 and 20 built for a process outside the camera application (X19, X20): they reach the
-# application's libmpr.so through /proc/<pid>/maps and /proc/<pid>/mem.
+# application's libmpr.so through /proc/<pid>/maps and /proc/<pid>/mem. The read-only plan runs the kit's check and its level 18 built
+# the same way (X0, X18): the kit's own check looks for the application's libraries in its own process, and finds none out here.
 #
 # When a plan cannot be finished, the encoder side is put back to stock (X20). The encoder side is the one part that outlives a
 # switch-off with the battery in; with it in place and the rest stock the camera must not record (the kit's own warning).
@@ -34,6 +35,21 @@ restore() { [ -e $KEPT ] && [ ! -e $RES ] && mv $KEPT $RES; }
 finish() { restore; say "END: $*"; rm -f $BUSY; exit 1; }
 stop() { say "$*"; finish "nothing more is done"; }
 
+# The check's result ($F) in a few lines of the log, which the status step shows: what was read and how it compares with the 1.01 update.
+# (The first run on a camera, issue 16, ended with a verdict and nothing that said whether the coprocessor had been read.)
+n() { grep -c -e "$1" $F; }
+digest() {
+    B=`grep -m1 -e '^buffer physical' -e '^!! buffer' -e '^!! /dev/mem open' -e '^!! mmap of the buffer' $F`
+    say "$S: coprocessor buffer (memory manager, through fx2cp.so): ${B:-no line in the result}"
+    say "$S: coprocessor code pages: $(n '^page .*SAME as') same, $(n '^page .*DIFFERS') differ"
+    say "$S: coprocessor sites: $(n '^site .*  STOCK$') stock, $(n '^site .*  TARGET$') target, $(n '^site .*  TEST2*$') test, $(n '^site .*  OTHER$') other, $(n '^site .*  NOT READ$') not read, $(n '^site .*not counted') filled at run time (not counted)"
+    say "$S: application files: $(n '^  bytes .*SAME as') same, $(n '^  bytes .*DIFFERS') differ, $(n '^file .*NOT MAPPED') not mapped"
+    say "$S: libmpr.so sites: $(n '^lm .*  STOCK$') stock, $(n '^lm .*  TARGET$') target, $(n '^lm .*  OTHER$') other, $(n '^lm .*  NOT ') not read"
+    say "$S: av-cam.bin: guards $(n '^guard .*  SAME$') same, $(n '^guard .*  DIFFERS$') differ; sites $(n '^av .*  STOCK$') stock, $(n '^av .*  TARGET$') target, $(n '^av .*  OTHER$') other"
+    grep -e '^!! ' $F | grep -v -e '^!! open failed' -e '^!! read failed' | head -n 6 | while read L; do say "$S: $L"; done
+    say "$S: `grep -m1 '^places not' $F`"
+}
+
 # One step: load the library into a small process, keep its result, set OUT to DONE, NOTHING, READ or a word for "not done".
 step() {
     S=$1
@@ -44,7 +60,7 @@ step() {
     OUT=busy
     [ -e $RES ] && { say "$S: a result file appeared (a kit session over USB?): it is left alone"; return 1; }
     case $S in
-        X*) LD_PRELOAD="$L" /bin/busybox true ;;                  # encoder side: no coprocessor transfer
+        X18|X19|X20) LD_PRELOAD="$L" /bin/busybox true ;;         # encoder side: no coprocessor transfer
         *) LD_PRELOAD="$D/fx2cp.so $L" /bin/busybox true ;;
     esac
     RC=$?
@@ -54,7 +70,9 @@ step() {
     OUT=cut
     grep -q "^== done" $F || { say "$S: the result is not complete (kept in $F)"; return 1; }
     if [ "$2" = read ]; then
-        OUT=READ; say "$S: read; `grep -i -m1 'verdict' $F`"; return 0
+        OUT=READ; say "$S: read; `grep -i -m1 'verdict' $F`"
+        [ $S = X0 ] && digest
+        return 0
     elif grep -q "UNDO INCOMPLETE" $F; then
         OUT=undo; say "$S: UNDO INCOMPLETE: take the battery out for 10 s before anything else (kept in $F)"; return 1
     elif grep -q "^DONE: " $F; then
@@ -99,7 +117,7 @@ rm -f $R/fx2boot_*.txt
 [ -f $D/plan ] || stop "no plan is chosen ($D/plan is absent)"
 PLAN=`cat $D/plan`
 case "$PLAN" in
-    check) STEPS="check X18" ;;                      # read-only: coprocessor sites and encoder sites, read from outside the application
+    check) STEPS="X0 X18" ;;                         # read-only: the kit's check and its level 18, both built for outside the application
     og2560) STEPS="L13 H5 L16 X19 S16" ;;            # 3840x2560 open gate, 23.98p/24p (the kit's og2560)
     og2560pal) STEPS="L13 P5 L16 X19 S16" ;;         # the same on a PAL-set camera, 25p (the kit's og2560 --pal)
     squeeze) STEPS="X20 L13 L5 S16" ;;               # the squeezed open gate (the kit's squeeze): its encoder side is the stock one

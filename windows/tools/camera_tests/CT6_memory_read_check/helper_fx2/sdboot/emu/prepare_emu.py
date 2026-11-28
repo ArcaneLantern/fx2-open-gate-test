@@ -87,6 +87,21 @@ def main():
         (OUT / ("model_%s.json" % s)).write_text(json.dumps(c) + "\n", encoding="utf8", newline="\n")
         done = next(ln for ln in c["result"].split("\n") if ln.startswith("DONE: "))
         print("%-4s %3d pages before, %3d after, %4d bytes may change   %s" % (s, len(c["before"]), len(c["after"]), len(c["allowed"]), done))
+    # 3. The kit's own model camera for its read-only check (helper_fx2/emu_fx2.py), stock, for an NTSC-set and a PAL-set camera, with what
+    #    the kit's check (libJit_fx2_check.so, as loaded INSIDE the camera application) reports for it. emu_fx2boot.py gives the same memory to
+    #    X0, the check built for OUTSIDE the application, which must report the same lines.
+    import emu_fx2 as K
+    kit_check = (KIT / "libJit_fx2_check.so").read_bytes()
+    for name, kw in (("check", {}), ("check_pal", {"pal": "stock"})):
+        files, _dirs, _phys, cp, _own = K.model(**kw)
+        run, text = K.run(kit_check, **kw)
+        if run.bad or "VERDICT READY" not in text:
+            raise SystemExit("STOP: the kit's check does not say READY for its own model camera (%s): %s" % (name, run.bad))
+        (OUT / ("model_%s.json" % name)).write_text(json.dumps({
+            "ram": [["%x" % a, bytes(b).hex()] for a, b in cp["ram"].items()],          # in the model's own order: a later block lies over an earlier one
+            "image_sha256": hashlib.sha256(cp["image"]).hexdigest(),
+            "cmdline": files["/proc/cmdline"].decode(), "kit_check_result": text}) + "\n", encoding="utf8", newline="\n")
+        print("%-9s %3d RAM blocks; the kit's check inside the application: %s" % (name, len(cp["ram"]), next(ln for ln in text.split("\n") if ln.startswith("VERDICT"))))
     return 0
 
 
